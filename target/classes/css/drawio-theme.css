@@ -1,0 +1,73 @@
+/* Draw.io color palette */
+.root {
+    -fx-base: #ffffff;
+    -fx-background: #f5f5f5;
+    -fx-control-inner-background: #ffffff;
+}
+
+.tool-bar {
+    -fx-background-color: #f5f5f5;
+    -fx-border-color: #d0d0d0;
+    -fx-border-width: 0 0 1 0;
+    -fx-padding: 4px 8px;
+}
+
+.diagram-canvas-container {
+    -fx-background-color: #ffffff;
+}
+
+.shape-panel {
+    -fx-background-color: #f5f5f5;
+    -fx-border-color: #d0d0d0;
+    -fx-border-width: 0 1 0 0;
+    -fx-min-width: 240px;
+    -fx-max-width: 240px;
+}
+
+.format-panel {
+    -fx-background-color: #f5f5f5;
+    -fx-border-color: #d0d0d0;
+    -fx-border-width: 0 0 0 1;
+    -fx-min-width: 260px;
+    -fx-max-width: 260px;
+}
+
+.class-node-header {
+    -fx-background-color: #dae8fc;
+    -fx-border-color: #6c8ebf;
+    -fx-font-weight: bold;
+}
+
+.class-node-interface-header {
+    -fx-background-color: #d5e8d4;
+    -fx-border-color: #82b366;
+}
+
+.class-node-abstract-header {
+    -fx-background-color: #ffe6cc;
+    -fx-border-color: #d6b656;
+}
+
+.class-node-selected {
+    -fx-border-color: #0066ff;
+    -fx-border-width: 2px;
+    -fx-effect: dropshadow(three-pass-box, #0066ff, 4, 0, 0, 0);
+}
+
+.chat-bubble-user {
+    -fx-background-color: #1a73e8;
+    -fx-text-fill: white;
+    -fx-background-radius: 12px 12px 0 12px;
+    -fx-padding: 8px 12px;
+}
+
+.chat-bubble-ai {
+    -fx-background-color: #f0f4f9;
+    -fx-text-fill: #202124;
+    -fx-background-radius: 12px 12px 12px 0;
+    -fx-padding: 8px 12px;
+}
+
+.score-good { -fx-stroke: #34a853; }
+.score-medium { -fx-stroke: #fbbc04; }
+.score-poor { -fx-stroke: #ea4335; }

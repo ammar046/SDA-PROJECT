@@ -21,19 +21,22 @@ import com.umlytics.ui.canvas.EditToolBar;
 import com.umlytics.ui.canvas.RelationshipEdge;
 import com.umlytics.ui.canvas.SelectionHandle;
 import javafx.geometry.Insets;
+import javafx.geometry.Point2D;
 import javafx.geometry.Pos;
 import javafx.scene.Cursor;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
-import javafx.scene.control.ChoiceDialog;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.SplitPane;
 import javafx.scene.control.TextField;
+import javafx.scene.control.TextInputControl;
 import javafx.scene.control.TitledPane;
+import javafx.event.EventTarget;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyCodeCombination;
 import javafx.scene.input.KeyCombination;
+import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.Background;
 import javafx.scene.layout.BackgroundFill;
@@ -44,6 +47,7 @@ import javafx.scene.layout.Pane;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
+import javafx.scene.shape.Line;
 import javafx.scene.shape.Rectangle;
 
 import java.util.ArrayDeque;
@@ -52,7 +56,6 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -65,8 +68,10 @@ public class DiagramEditorPanel extends BorderPane {
     private final VBox rightFormatPanel;
     private final Label statusZoomLabel;
     private final Label statusCursorLabel;
+    private final Label statusHintLabel;
     private final Rectangle miniViewport;
     private final Rectangle selectionBox;
+    private final Line relationshipPreview;
     private final Deque<DiagramEdit> undoStack = new ArrayDeque<>();
     private final Deque<DiagramEdit> redoStack = new ArrayDeque<>();
     private ToolMode toolMode = ToolMode.SELECT;
@@ -76,7 +81,12 @@ public class DiagramEditorPanel extends BorderPane {
     private final Map<RelationshipEdge, RelationshipLink> links = new HashMap<>();
     private final Map<RelationshipEdge, Relationship> relationshipMap = new HashMap<>();
     private final Set<UMLClass> selectedClasses = new HashSet<>();
+    private UMLClass copiedClassTemplate;
     private RelationshipEdge activeEdgeSelection;
+    private SplitPane diagramSplitPane;
+    private ToolMode toolModeBeforeSpace;
+    private boolean spacePanEngaged;
+    private boolean formatPanelVisible = true;
     private int pageCounter = 1;
     private int tempClassId = -1;
     private double selectionStartX;
@@ -95,6 +105,7 @@ public class DiagramEditorPanel extends BorderPane {
         this.rightFormatPanel = new VBox(8);
         this.statusZoomLabel = new Label("zoom: 100%");
         this.statusCursorLabel = new Label("cursor: 0,0");
+        this.statusHintLabel = new Label("ready");
         this.miniViewport = new Rectangle(24, 18, Color.TRANSPARENT);
         miniViewport.setStroke(Color.web("#0066ff"));
         this.selectionBox = new Rectangle();
@@ -103,8 +114,15 @@ public class DiagramEditorPanel extends BorderPane {
         selectionBox.setFill(Color.web("#1a73e8", 0.15));
         selectionBox.setVisible(false);
         selectionBox.setManaged(false);
+        this.relationshipPreview = new Line();
+        relationshipPreview.setStroke(Color.web("#1a73e8"));
+        relationshipPreview.getStrokeDashArray().setAll(6.0, 4.0);
+        relationshipPreview.setStrokeWidth(1.5);
+        relationshipPreview.setMouseTransparent(true);
+        relationshipPreview.setVisible(false);
 
         canvasLayer.getChildren().add(canvas);
+        canvasLayer.getChildren().add(relationshipPreview);
         canvasLayer.getChildren().add(selectionBox);
         canvasLayer.setPrefSize(1600, 1000);
         canvasLayer.getStyleClass().add("diagram-canvas-container");
@@ -116,6 +134,7 @@ public class DiagramEditorPanel extends BorderPane {
         rightFormatPanel.getStyleClass().add("format-panel");
 
         SplitPane splitPane = new SplitPane(leftShapePanel, buildCanvasCenter(), rightFormatPanel);
+        this.diagramSplitPane = splitPane;
         splitPane.setDividerPositions(0.16, 0.82);
 
         setTop(toolBar);
@@ -133,9 +152,11 @@ public class DiagramEditorPanel extends BorderPane {
         umlClass.setName("NewClass");
         umlClass.setPositionX(120 + currentDiagram.getClasses().size() * 30);
         umlClass.setPositionY(120 + currentDiagram.getClasses().size() * 30);
-        umlClass.setHeaderColor("Blue");
-        umlClass.setBorderColor("Blue");
-        umlClass.setMemberFontSize(12);
+        umlClass.setHeaderColor(currentDiagram.getDefaultClassHeaderColor());
+        umlClass.setBorderColor(currentDiagram.getDefaultClassBorderColor());
+        umlClass.setMemberFontSize(currentDiagram.getDefaultClassFontSize());
+        umlClass.setClassWidth(currentDiagram.getDefaultClassWidth());
+        umlClass.setClassHeight(currentDiagram.getDefaultClassHeight());
         currentDiagram.addUMLClass(umlClass);
         DiagramEdit edit = new DiagramEdit();
         edit.setEditType(EditType.ADD_CLASS);
@@ -149,6 +170,8 @@ public class DiagramEditorPanel extends BorderPane {
     public void onAddRelationship() {
         toolMode = ToolMode.RELATIONSHIP;
         pendingRelationshipSource = null;
+        relationshipPreview.setVisible(false);
+        statusHintLabel.setText("relationship: choose source class");
     }
 
     public void onSaveDiagram() {
@@ -169,6 +192,10 @@ public class DiagramEditorPanel extends BorderPane {
         }
     }
 
+    public UMLDiagram getCurrentDiagram() {
+        return currentDiagram;
+    }
+
     public void renderDiagram(UMLDiagram d) {
         this.currentDiagram = d;
         this.tempClassId = Math.min(-1, currentDiagram.getClasses().stream().mapToInt(UMLClass::getClassId).min().orElse(0) - 1);
@@ -176,7 +203,7 @@ public class DiagramEditorPanel extends BorderPane {
         links.clear();
         relationshipMap.clear();
         handlesMap.clear();
-        canvasLayer.getChildren().setAll(canvas);
+        canvasLayer.getChildren().setAll(canvas, relationshipPreview, selectionBox);
         for (UMLClass umlClass : currentDiagram.getClasses()) {
             addClassNode(umlClass);
         }
@@ -194,11 +221,19 @@ public class DiagramEditorPanel extends BorderPane {
         toolBar.getRelationshipButton().setOnAction(event -> onAddRelationship());
         toolBar.getUndoButton().setOnAction(event -> undo());
         toolBar.getRedoButton().setOnAction(event -> redo());
-        toolBar.getSelectButton().setOnAction(event -> toolMode = ToolMode.SELECT);
+        toolBar.getSelectButton().setOnAction(event -> {
+            toolMode = ToolMode.SELECT;
+            pendingRelationshipSource = null;
+            relationshipPreview.setVisible(false);
+            statusHintLabel.setText("ready");
+        });
         toolBar.getPanButton().setOnAction(event -> {
             toolMode = ToolMode.PAN;
-            canvas.fitToWindow();
+            pendingRelationshipSource = null;
+            relationshipPreview.setVisible(false);
+            statusHintLabel.setText("pan mode");
         });
+        toolBar.getSaveButton().setOnAction(event -> onSaveDiagram());
     }
 
     private void addClassNode(UMLClass umlClass) {
@@ -206,10 +241,12 @@ public class DiagramEditorPanel extends BorderPane {
         node.setMembers(umlClass.getAttributes(), umlClass.getMethods());
         node.setLayoutX(umlClass.getPositionX());
         node.setLayoutY(umlClass.getPositionY());
-        node.setPrefSize(200, 140);
+        node.setPrefSize(umlClass.getClassWidth() <= 0 ? 200 : umlClass.getClassWidth(),
+                umlClass.getClassHeight() <= 0 ? 140 : umlClass.getClassHeight());
         node.setHeaderColor(parseClassHeaderColor(umlClass.getHeaderColor()));
         node.setBorderColor(parseClassBorderColor(umlClass.getBorderColor()));
         node.setMemberFontSize(umlClass.getMemberFontSize() <= 0 ? 12 : umlClass.getMemberFontSize());
+        node.setKindFlags(umlClass.isAbstract(), umlClass.isInterface());
         node.setRenameHandler(newName -> {
             String oldName = umlClass.getName();
             umlClass.setName(newName);
@@ -224,6 +261,13 @@ public class DiagramEditorPanel extends BorderPane {
         });
         node.setAddAttributeHandler(() -> addAttributeToClass(umlClass, node));
         node.setAddMethodHandler(() -> addMethodToClass(umlClass, node));
+        node.setEditClassHandler(() -> {
+            clearSelections();
+            selectedClasses.add(umlClass);
+            node.setSelected(true);
+            updateSelectionHandles(umlClass);
+            showClassFormatControls(umlClass);
+        });
         node.setEditAttributesTextHandler(text -> {
             String before = attributesToText(umlClass);
             parseAndApplyAttributes(umlClass, text);
@@ -250,9 +294,48 @@ public class DiagramEditorPanel extends BorderPane {
             redoStack.clear();
             node.setMembers(umlClass.getAttributes(), umlClass.getMethods());
         });
+        node.setAddRelationshipHandler(type -> {
+            toolMode = ToolMode.RELATIONSHIP;
+            pendingRelationshipSource = umlClass;
+            if (type != null) {
+                currentDiagram.setDefaultRelationshipType(type);
+            }
+            relationshipPreview.setVisible(false);
+        });
+        node.setDeleteHandler(() -> deleteSingleClass(umlClass));
+        node.setToggleAbstractHandler(value -> {
+            umlClass.setAbstract(Boolean.TRUE.equals(value));
+            if (Boolean.TRUE.equals(value)) {
+                umlClass.setInterface(false);
+                node.setKindFlags(true, false);
+            } else {
+                node.setKindFlags(false, umlClass.isInterface());
+            }
+        });
+        node.setToggleInterfaceHandler(value -> {
+            umlClass.setInterface(Boolean.TRUE.equals(value));
+            if (Boolean.TRUE.equals(value)) {
+                umlClass.setAbstract(false);
+                node.setKindFlags(false, true);
+            } else {
+                node.setKindFlags(umlClass.isAbstract(), false);
+            }
+        });
+        node.setCopyHandler(() -> copiedClassTemplate = cloneClass(umlClass));
+        node.setPasteHandler(() -> pasteCopiedClassNear(umlClass));
         configureDrag(node, umlClass);
 
         node.setOnMouseClicked(event -> {
+            if (toolMode == ToolMode.RELATIONSHIP) {
+                if (pendingRelationshipSource == null) {
+                    pendingRelationshipSource = umlClass;
+                    statusHintLabel.setText("relationship: source " + umlClass.getName() + ", choose target class");
+                } else if (pendingRelationshipSource != umlClass) {
+                    completeRelationshipCreation(umlClass);
+                }
+                event.consume();
+                return;
+            }
             if (toolMode == ToolMode.PAN) {
                 return;
             }
@@ -261,22 +344,6 @@ public class DiagramEditorPanel extends BorderPane {
             }
             toggleClassSelection(umlClass);
             showClassFormatControls(umlClass);
-
-            if (toolMode != ToolMode.RELATIONSHIP) {
-                return;
-            }
-            if (pendingRelationshipSource == null) {
-                pendingRelationshipSource = umlClass;
-            } else {
-                if (pendingRelationshipSource != umlClass) {
-                    RelationshipType type = chooseRelationshipType();
-                    if (type != null) {
-                        addVisualRelationship(pendingRelationshipSource, umlClass, type, null);
-                    }
-                }
-                toolMode = ToolMode.SELECT;
-                pendingRelationshipSource = null;
-            }
         });
         nodeMap.put(umlClass, node);
         canvasLayer.getChildren().add(node);
@@ -289,11 +356,13 @@ public class DiagramEditorPanel extends BorderPane {
         if (s == null || t == null) {
             return;
         }
+        Point2D start = anchorToward(s, t);
+        Point2D end = anchorToward(t, s);
         RelationshipEdge edge = new RelationshipEdge(
-                centerX(s),
-                centerY(s),
-                centerX(t),
-                centerY(t)
+                start.getX(),
+                start.getY(),
+                end.getX(),
+                end.getY()
         );
         edge.setRelationshipType(type);
         edge.setMiddleLabel(type.name());
@@ -437,6 +506,11 @@ public class DiagramEditorPanel extends BorderPane {
             umlClass.setName(name == null ? "NewClass" : name.toString());
             umlClass.setPositionX(120 + currentDiagram.getClasses().size() * 30);
             umlClass.setPositionY(120 + currentDiagram.getClasses().size() * 30);
+            umlClass.setHeaderColor(currentDiagram.getDefaultClassHeaderColor());
+            umlClass.setBorderColor(currentDiagram.getDefaultClassBorderColor());
+            umlClass.setMemberFontSize(currentDiagram.getDefaultClassFontSize());
+            umlClass.setClassWidth(currentDiagram.getDefaultClassWidth());
+            umlClass.setClassHeight(currentDiagram.getDefaultClassHeight());
             currentDiagram.addUMLClass(umlClass);
             addClassNode(umlClass);
             refreshMiniMap();
@@ -553,6 +627,7 @@ public class DiagramEditorPanel extends BorderPane {
         });
 
         HBox status = new HBox(18, new Label("Page:"), pageTabs, statusZoomLabel, statusCursorLabel);
+        status.getChildren().add(statusHintLabel);
         status.setPadding(new Insets(6, 10, 6, 10));
         status.setAlignment(Pos.CENTER_LEFT);
         status.setStyle("-fx-border-color: #d0d0d0; -fx-border-width: 1 0 0 0;");
@@ -585,6 +660,10 @@ public class DiagramEditorPanel extends BorderPane {
         });
 
         canvasLayer.setOnMouseDragged(event -> {
+            if (toolMode == ToolMode.RELATIONSHIP && pendingRelationshipSource != null) {
+                updateRelationshipPreview(event.getX(), event.getY());
+                return;
+            }
             if (toolMode != ToolMode.SELECT || !selectionBox.isVisible()) {
                 return;
             }
@@ -599,6 +678,14 @@ public class DiagramEditorPanel extends BorderPane {
         });
 
         canvasLayer.setOnMouseReleased(event -> {
+            if (toolMode == ToolMode.RELATIONSHIP) {
+                UMLClass target = classFromEventTarget(event.getTarget());
+                if (target == null || target == pendingRelationshipSource) {
+                    target = classAtPoint(event.getX(), event.getY(), pendingRelationshipSource);
+                }
+                completeRelationshipCreation(target);
+                return;
+            }
             if (toolMode != ToolMode.SELECT || !selectionBox.isVisible()) {
                 return;
             }
@@ -610,15 +697,44 @@ public class DiagramEditorPanel extends BorderPane {
     private void wireKeyboardShortcuts() {
         setFocusTraversable(true);
         sceneProperty().addListener((obs, oldScene, scene) -> {
+            if (oldScene != null) {
+                oldScene.removeEventFilter(KeyEvent.KEY_PRESSED, this::onDiagramKeyPressedFiltered);
+                oldScene.removeEventFilter(KeyEvent.KEY_RELEASED, this::onDiagramKeyReleasedFiltered);
+            }
             if (scene == null) {
                 return;
             }
             scene.getAccelerators().put(new KeyCodeCombination(KeyCode.Z, KeyCombination.CONTROL_DOWN), this::undo);
             scene.getAccelerators().put(new KeyCodeCombination(KeyCode.Y, KeyCombination.CONTROL_DOWN), this::redo);
+            scene.getAccelerators().put(new KeyCodeCombination(KeyCode.Z, KeyCombination.CONTROL_DOWN, KeyCombination.SHIFT_DOWN), this::redo);
             scene.getAccelerators().put(new KeyCodeCombination(KeyCode.H, KeyCombination.CONTROL_DOWN, KeyCombination.SHIFT_DOWN), canvas::fitToWindow);
             scene.getAccelerators().put(new KeyCodeCombination(KeyCode.A, KeyCombination.CONTROL_DOWN), this::selectAllClasses);
+            scene.addEventFilter(KeyEvent.KEY_PRESSED, this::onDiagramKeyPressedFiltered);
+            scene.addEventFilter(KeyEvent.KEY_RELEASED, this::onDiagramKeyReleasedFiltered);
         });
         setOnKeyPressed(event -> {
+            if (event.getCode() == KeyCode.ESCAPE) {
+                if (spacePanEngaged) {
+                    spacePanEngaged = false;
+                    toolMode = toolModeBeforeSpace != null ? toolModeBeforeSpace : ToolMode.SELECT;
+                    toolModeBeforeSpace = null;
+                }
+                if (toolMode == ToolMode.RELATIONSHIP) {
+                    toolMode = ToolMode.SELECT;
+                    pendingRelationshipSource = null;
+                    relationshipPreview.setVisible(false);
+                    statusHintLabel.setText("relationship mode cancelled");
+                    event.consume();
+                    return;
+                }
+                clearSelections();
+                if (toolMode == ToolMode.PAN && !spacePanEngaged) {
+                    toolMode = ToolMode.SELECT;
+                    statusHintLabel.setText("ready");
+                }
+                event.consume();
+                return;
+            }
             if (event.getCode() == KeyCode.DELETE || event.getCode() == KeyCode.BACK_SPACE) {
                 if (activeEdgeSelection != null) {
                     deleteSelectedEdge();
@@ -629,11 +745,168 @@ public class DiagramEditorPanel extends BorderPane {
         });
     }
 
+    private void onDiagramKeyPressedFiltered(KeyEvent e) {
+        if (!eventTargetUnderEditor(e.getTarget())) {
+            return;
+        }
+        if (isUnderTextInput(e.getTarget())) {
+            return;
+        }
+        if (e.getCode() == KeyCode.SPACE) {
+            if (!e.isShortcutDown()) {
+                if (!spacePanEngaged) {
+                    spacePanEngaged = true;
+                    toolModeBeforeSpace = toolMode;
+                    toolMode = ToolMode.PAN;
+                    statusHintLabel.setText("pan (release Space)");
+                }
+                e.consume();
+            }
+            return;
+        }
+        if (e.isShortcutDown() && e.getCode() == KeyCode.C) {
+            copySelectionForShortcut();
+            e.consume();
+            return;
+        }
+        if (e.isShortcutDown() && e.getCode() == KeyCode.V) {
+            pasteFromShortcut();
+            e.consume();
+            return;
+        }
+        if (e.getCode() == KeyCode.F2) {
+            beginRenameOnPrimarySelection();
+            e.consume();
+            return;
+        }
+        if (e.isShortcutDown() && (e.getCode() == KeyCode.EQUALS || e.getCode() == KeyCode.PLUS || e.getCode() == KeyCode.ADD)) {
+            zoomInFromShortcut();
+            e.consume();
+            return;
+        }
+        if (e.isShortcutDown() && (e.getCode() == KeyCode.MINUS || e.getCode() == KeyCode.SUBTRACT)) {
+            zoomOutFromShortcut();
+            e.consume();
+            return;
+        }
+        if (e.isShortcutDown() && e.isShiftDown() && e.getCode() == KeyCode.F) {
+            toggleFormatPanel();
+            e.consume();
+        }
+    }
+
+    private void onDiagramKeyReleasedFiltered(KeyEvent e) {
+        if (e.getCode() != KeyCode.SPACE || !spacePanEngaged) {
+            return;
+        }
+        spacePanEngaged = false;
+        toolMode = toolModeBeforeSpace != null ? toolModeBeforeSpace : ToolMode.SELECT;
+        toolModeBeforeSpace = null;
+        statusHintLabel.setText("ready");
+        e.consume();
+    }
+
+    private boolean eventTargetUnderEditor(EventTarget target) {
+        if (!(target instanceof Node n)) {
+            return false;
+        }
+        while (n != null) {
+            if (n == this) {
+                return true;
+            }
+            n = n.getParent();
+        }
+        return false;
+    }
+
+    private static boolean isUnderTextInput(EventTarget target) {
+        if (!(target instanceof Node n)) {
+            return false;
+        }
+        while (n != null) {
+            if (n instanceof TextInputControl) {
+                return true;
+            }
+            n = n.getParent();
+        }
+        return false;
+    }
+
+    private void zoomInFromShortcut() {
+        canvas.setZoom(canvas.getZoom() * 1.1);
+        statusZoomLabel.setText("zoom: " + (int) Math.round(canvas.getZoom() * 100) + "%");
+    }
+
+    private void zoomOutFromShortcut() {
+        canvas.setZoom(canvas.getZoom() / 1.1);
+        statusZoomLabel.setText("zoom: " + (int) Math.round(canvas.getZoom() * 100) + "%");
+    }
+
+    private void toggleFormatPanel() {
+        formatPanelVisible = !formatPanelVisible;
+        rightFormatPanel.setVisible(formatPanelVisible);
+        rightFormatPanel.setManaged(formatPanelVisible);
+        if (formatPanelVisible) {
+            diagramSplitPane.setDividerPositions(0.16, 0.82);
+        } else {
+            diagramSplitPane.setDividerPositions(0.16, 1.0);
+        }
+    }
+
+    private void copySelectionForShortcut() {
+        if (selectedClasses.isEmpty()) {
+            return;
+        }
+        UMLClass first = selectedClasses.iterator().next();
+        copiedClassTemplate = cloneClass(first);
+        statusHintLabel.setText("copied: " + first.getName());
+    }
+
+    private void pasteFromShortcut() {
+        if (copiedClassTemplate == null) {
+            return;
+        }
+        if (!selectedClasses.isEmpty()) {
+            pasteCopiedClassNear(selectedClasses.iterator().next());
+        } else {
+            pasteCopiedClassAt(240, 160);
+        }
+        statusHintLabel.setText("pasted class");
+    }
+
+    private void beginRenameOnPrimarySelection() {
+        if (selectedClasses.size() != 1) {
+            return;
+        }
+        UMLClass uml = selectedClasses.iterator().next();
+        ClassNode node = nodeMap.get(uml);
+        if (node != null) {
+            node.requestRenameEditor();
+        }
+    }
+
     private void configureDrag(ClassNode node, UMLClass umlClass) {
         final double[] drag = new double[2];
         final Map<UMLClass, double[]> initialPositions = new HashMap<>();
         node.setOnMousePressed(event -> {
             if (toolMode == ToolMode.PAN) {
+                return;
+            }
+            if (toolMode == ToolMode.RELATIONSHIP) {
+                if (pendingRelationshipSource == null) {
+                    pendingRelationshipSource = umlClass;
+                    statusHintLabel.setText("relationship: source " + umlClass.getName() + ", drag to target");
+                }
+                ClassNode sourceNode = nodeMap.get(pendingRelationshipSource);
+                if (sourceNode == null) {
+                    return;
+                }
+                Point2D start = anchorTowardPoint(sourceNode, new Point2D(event.getX() + node.getLayoutX(), event.getY() + node.getLayoutY()));
+                relationshipPreview.setStartX(start.getX());
+                relationshipPreview.setStartY(start.getY());
+                relationshipPreview.setEndX(start.getX());
+                relationshipPreview.setEndY(start.getY());
+                relationshipPreview.setVisible(true);
                 return;
             }
             drag[0] = event.getSceneX() - node.getLayoutX();
@@ -651,7 +924,7 @@ public class DiagramEditorPanel extends BorderPane {
             }
         });
         node.setOnMouseDragged(event -> {
-            if (toolMode == ToolMode.PAN) {
+            if (toolMode != ToolMode.SELECT) {
                 return;
             }
             double primaryX = snap(event.getSceneX() - drag[0]);
@@ -755,11 +1028,13 @@ public class DiagramEditorPanel extends BorderPane {
             if (sourceNode == null || targetNode == null) {
                 continue;
             }
+            Point2D start = anchorToward(sourceNode, targetNode);
+            Point2D end = anchorToward(targetNode, sourceNode);
             entry.getKey().update(
-                    centerX(sourceNode),
-                    centerY(sourceNode),
-                    centerX(targetNode),
-                    centerY(targetNode)
+                    start.getX(),
+                    start.getY(),
+                    end.getX(),
+                    end.getY()
             );
         }
     }
@@ -799,6 +1074,15 @@ public class DiagramEditorPanel extends BorderPane {
             removeRelationshipsForClass(umlClass);
         }
         refreshMiniMap();
+    }
+
+    private void deleteSingleClass(UMLClass umlClass) {
+        if (umlClass == null) {
+            return;
+        }
+        selectedClasses.clear();
+        selectedClasses.add(umlClass);
+        deleteSelectedClasses();
     }
 
     private void deleteSelectedEdge() {
@@ -871,6 +1155,9 @@ public class DiagramEditorPanel extends BorderPane {
                 umlClass.setHeaderColor(headerColorBox.getValue());
                 umlClass.setBorderColor(borderColorBox.getValue());
                 umlClass.setMemberFontSize(Double.parseDouble(fontSizeBox.getValue()));
+                currentDiagram.setDefaultClassHeaderColor(umlClass.getHeaderColor());
+                currentDiagram.setDefaultClassBorderColor(umlClass.getBorderColor());
+                currentDiagram.setDefaultClassFontSize(umlClass.getMemberFontSize());
                 updateSelectionHandles(umlClass);
                 updateRelationshipsForClass(umlClass);
                 refreshMiniMap();
@@ -923,6 +1210,9 @@ public class DiagramEditorPanel extends BorderPane {
             Map<String, Object> before = captureEdgeState(edge);
             applyEdgeState(edge, relationshipTypeBox.getValue(), labelField.getText(), sourceMult.getText(),
                     targetMult.getText(), "Dashed".equals(lineStyleBox.getValue()), colorBox.getValue(), edge.getBendX());
+            currentDiagram.setDefaultRelationshipType(relationshipTypeBox.getValue());
+            currentDiagram.setDefaultEdgeColor(colorBox.getValue());
+            currentDiagram.setDefaultEdgeDashed("Dashed".equals(lineStyleBox.getValue()));
             Map<String, Object> after = captureEdgeState(edge);
             DiagramEdit edit = new DiagramEdit();
             edit.setEditType(EditType.EDIT_ATTR);
@@ -977,17 +1267,9 @@ public class DiagramEditorPanel extends BorderPane {
         relationship.setSourceMultiplicity("1");
         relationship.setTargetMultiplicity("*");
         relationship.setLabel(type.name());
-        relationship.setEdgeColor("Black");
-        relationship.setDashed(false);
+        relationship.setEdgeColor(currentDiagram.getDefaultEdgeColor());
+        relationship.setDashed(currentDiagram.isDefaultEdgeDashed());
         return relationship;
-    }
-
-    private RelationshipType chooseRelationshipType() {
-        ChoiceDialog<RelationshipType> dialog = new ChoiceDialog<>(RelationshipType.ASSOCIATION, RelationshipType.values());
-        dialog.setHeaderText("Choose relationship type");
-        dialog.setContentText("Type:");
-        Optional<RelationshipType> result = dialog.showAndWait();
-        return result.orElse(null);
     }
 
     private void addAttributeToClass(UMLClass umlClass, ClassNode node) {
@@ -1006,6 +1288,62 @@ public class DiagramEditorPanel extends BorderPane {
         method.setVisibility(Visibility.PUBLIC);
         umlClass.addMethod(method);
         node.setMembers(umlClass.getAttributes(), umlClass.getMethods());
+    }
+
+    private UMLClass cloneClass(UMLClass source) {
+        UMLClass copy = new UMLClass();
+        copy.setName(source.getName());
+        copy.setAbstract(source.isAbstract());
+        copy.setInterface(source.isInterface());
+        copy.setHeaderColor(source.getHeaderColor());
+        copy.setBorderColor(source.getBorderColor());
+        copy.setMemberFontSize(source.getMemberFontSize());
+        copy.setClassWidth(source.getClassWidth());
+        copy.setClassHeight(source.getClassHeight());
+        for (Attribute attribute : source.getAttributes()) {
+            Attribute clone = new Attribute();
+            clone.setName(attribute.getName());
+            clone.setType(attribute.getType());
+            clone.setVisibility(attribute.getVisibility());
+            clone.setStatic(attribute.isStatic());
+            copy.addAttribute(clone);
+        }
+        for (Method method : source.getMethods()) {
+            Method clone = new Method();
+            clone.setName(method.getName());
+            clone.setReturnType(method.getReturnType());
+            clone.setVisibility(method.getVisibility());
+            clone.setAbstract(method.isAbstract());
+            clone.setParameters(List.copyOf(method.getParameters()));
+            copy.addMethod(clone);
+        }
+        return copy;
+    }
+
+    private void pasteCopiedClassNear(UMLClass anchor) {
+        if (copiedClassTemplate == null) {
+            return;
+        }
+        UMLClass pasted = cloneClass(copiedClassTemplate);
+        pasted.setClassId(tempClassId--);
+        pasted.setPositionX(snap(anchor.getPositionX() + 30));
+        pasted.setPositionY(snap(anchor.getPositionY() + 30));
+        currentDiagram.addUMLClass(pasted);
+        addClassNode(pasted);
+        refreshMiniMap();
+    }
+
+    private void pasteCopiedClassAt(double x, double y) {
+        if (copiedClassTemplate == null) {
+            return;
+        }
+        UMLClass pasted = cloneClass(copiedClassTemplate);
+        pasted.setClassId(tempClassId--);
+        pasted.setPositionX(snap(x));
+        pasted.setPositionY(snap(y));
+        currentDiagram.addUMLClass(pasted);
+        addClassNode(pasted);
+        refreshMiniMap();
     }
 
     private void parseAndApplyAttributes(UMLClass umlClass, String text) {
@@ -1184,7 +1522,15 @@ public class DiagramEditorPanel extends BorderPane {
 
     private void applyEdgeState(RelationshipEdge edge, RelationshipType type, String label, String sourceMultiplicity,
                                 String targetMultiplicity, boolean dashed, String colorName, double bendX) {
-        edge.setMiddleLabel(label);
+        RelationshipType previousType = edge.getRelationshipType();
+        String incomingLabel = label == null ? "" : label.trim();
+        String currentLabel = edge.getMiddleLabel() == null ? "" : edge.getMiddleLabel().trim();
+        boolean shouldAutoLabel = incomingLabel.isBlank()
+                || incomingLabel.equalsIgnoreCase(previousType.name())
+                || incomingLabel.equalsIgnoreCase(currentLabel);
+        String resolvedLabel = shouldAutoLabel ? type.name() : label;
+
+        edge.setMiddleLabel(resolvedLabel);
         edge.setSourceMultiplicity(sourceMultiplicity);
         edge.setTargetMultiplicity(targetMultiplicity);
         edge.setRelationshipType(type);
@@ -1199,7 +1545,7 @@ public class DiagramEditorPanel extends BorderPane {
         Relationship relation = relationshipMap.get(edge);
         if (relation != null && relation.getType() != type) {
             Relationship replacement = buildRelationship(type, relation.getSource(), relation.getTarget());
-            replacement.setLabel(label);
+            replacement.setLabel(resolvedLabel);
             replacement.setSourceMultiplicity(sourceMultiplicity);
             replacement.setTargetMultiplicity(targetMultiplicity);
             replacement.setBendX(bendX);
@@ -1209,7 +1555,7 @@ public class DiagramEditorPanel extends BorderPane {
             currentDiagram.addRelationship(replacement);
             relationshipMap.put(edge, replacement);
         } else if (relation != null) {
-            relation.setLabel(label);
+            relation.setLabel(resolvedLabel);
             relation.setSourceMultiplicity(sourceMultiplicity);
             relation.setTargetMultiplicity(targetMultiplicity);
             relation.setBendX(bendX);
@@ -1268,11 +1614,16 @@ public class DiagramEditorPanel extends BorderPane {
                 node.setPrefHeight(snap(resized[3]));
                 umlClass.setPositionX(node.getLayoutX());
                 umlClass.setPositionY(node.getLayoutY());
+                umlClass.setClassWidth(node.getPrefWidth());
+                umlClass.setClassHeight(node.getPrefHeight());
+                currentDiagram.setDefaultClassWidth(umlClass.getClassWidth());
+                currentDiagram.setDefaultClassHeight(umlClass.getClassHeight());
                 updateRelationshipsForClass(umlClass);
-                updateSelectionHandles(umlClass);
+                updateHandlePositions(handles, node);
                 refreshMiniMap();
                 event.consume();
             });
+            handle.addEventFilter(MouseEvent.MOUSE_RELEASED, event -> updateSelectionHandles(umlClass));
         }
     }
 
@@ -1352,12 +1703,137 @@ public class DiagramEditorPanel extends BorderPane {
         return height > 0 ? height : Math.max(90, node.getPrefHeight());
     }
 
-    private double centerX(ClassNode node) {
-        return node.getLayoutX() + (nodeWidth(node) / 2);
+    private void updateHandlePositions(List<SelectionHandle> handles, ClassNode node) {
+        if (handles == null || handles.size() != 8) {
+            return;
+        }
+        double x = node.getLayoutX();
+        double y = node.getLayoutY();
+        double w = nodeWidth(node);
+        double h = nodeHeight(node);
+        handles.get(0).setX(x - 4);
+        handles.get(0).setY(y - 4);
+        handles.get(1).setX(x + w / 2 - 4);
+        handles.get(1).setY(y - 4);
+        handles.get(2).setX(x + w - 4);
+        handles.get(2).setY(y - 4);
+        handles.get(3).setX(x - 4);
+        handles.get(3).setY(y + h / 2 - 4);
+        handles.get(4).setX(x + w - 4);
+        handles.get(4).setY(y + h / 2 - 4);
+        handles.get(5).setX(x - 4);
+        handles.get(5).setY(y + h - 4);
+        handles.get(6).setX(x + w / 2 - 4);
+        handles.get(6).setY(y + h - 4);
+        handles.get(7).setX(x + w - 4);
+        handles.get(7).setY(y + h - 4);
     }
 
-    private double centerY(ClassNode node) {
-        return node.getLayoutY() + (nodeHeight(node) / 2);
+    private Point2D anchorToward(ClassNode from, ClassNode to) {
+        double fx = from.getLayoutX();
+        double fy = from.getLayoutY();
+        double fw = nodeWidth(from);
+        double fh = nodeHeight(from);
+        double fcx = fx + fw / 2.0;
+        double fcy = fy + fh / 2.0;
+        double tcx = to.getLayoutX() + nodeWidth(to) / 2.0;
+        double tcy = to.getLayoutY() + nodeHeight(to) / 2.0;
+
+        double dx = tcx - fcx;
+        double dy = tcy - fcy;
+        if (Math.abs(dx) < 0.0001 && Math.abs(dy) < 0.0001) {
+            return new Point2D(fcx, fcy);
+        }
+        double sx = (fw / 2.0) / Math.max(Math.abs(dx), 0.0001);
+        double sy = (fh / 2.0) / Math.max(Math.abs(dy), 0.0001);
+        double scale = Math.min(sx, sy);
+        return new Point2D(fcx + dx * scale, fcy + dy * scale);
+    }
+
+    private Point2D anchorTowardPoint(ClassNode from, Point2D point) {
+        double fx = from.getLayoutX();
+        double fy = from.getLayoutY();
+        double fw = nodeWidth(from);
+        double fh = nodeHeight(from);
+        double fcx = fx + fw / 2.0;
+        double fcy = fy + fh / 2.0;
+        double dx = point.getX() - fcx;
+        double dy = point.getY() - fcy;
+        if (Math.abs(dx) < 0.0001 && Math.abs(dy) < 0.0001) {
+            return new Point2D(fcx, fcy);
+        }
+        double sx = (fw / 2.0) / Math.max(Math.abs(dx), 0.0001);
+        double sy = (fh / 2.0) / Math.max(Math.abs(dy), 0.0001);
+        double scale = Math.min(sx, sy);
+        return new Point2D(fcx + dx * scale, fcy + dy * scale);
+    }
+
+    private void updateRelationshipPreview(double mouseX, double mouseY) {
+        if (pendingRelationshipSource == null) {
+            relationshipPreview.setVisible(false);
+            return;
+        }
+        ClassNode sourceNode = nodeMap.get(pendingRelationshipSource);
+        if (sourceNode == null) {
+            relationshipPreview.setVisible(false);
+            return;
+        }
+        Point2D start = anchorTowardPoint(sourceNode, new Point2D(mouseX, mouseY));
+        relationshipPreview.setStartX(start.getX());
+        relationshipPreview.setStartY(start.getY());
+        relationshipPreview.setEndX(mouseX);
+        relationshipPreview.setEndY(mouseY);
+        relationshipPreview.setVisible(true);
+    }
+
+    private UMLClass classFromEventTarget(Object eventTarget) {
+        if (!(eventTarget instanceof Node node)) {
+            return null;
+        }
+        Node cursor = node;
+        while (cursor != null) {
+            for (Map.Entry<UMLClass, ClassNode> entry : nodeMap.entrySet()) {
+                if (entry.getValue() == cursor) {
+                    return entry.getKey();
+                }
+            }
+            cursor = cursor.getParent();
+        }
+        return null;
+    }
+
+    private UMLClass classAtPoint(double x, double y, UMLClass exclude) {
+        for (Map.Entry<UMLClass, ClassNode> entry : nodeMap.entrySet()) {
+            UMLClass umlClass = entry.getKey();
+            if (umlClass == exclude) {
+                continue;
+            }
+            ClassNode node = entry.getValue();
+            double nx = node.getLayoutX();
+            double ny = node.getLayoutY();
+            double nw = nodeWidth(node);
+            double nh = nodeHeight(node);
+            if (x >= nx && x <= nx + nw && y >= ny && y <= ny + nh) {
+                return umlClass;
+            }
+        }
+        return null;
+    }
+
+    private void completeRelationshipCreation(UMLClass target) {
+        if (pendingRelationshipSource != null && target != null && pendingRelationshipSource != target) {
+            RelationshipType type = currentDiagram.getDefaultRelationshipType() == null
+                    ? RelationshipType.ASSOCIATION
+                    : currentDiagram.getDefaultRelationshipType();
+            addVisualRelationship(pendingRelationshipSource, target, type, null);
+            pendingRelationshipSource = null;
+            relationshipPreview.setVisible(false);
+            statusHintLabel.setText("relationship created");
+            return;
+        }
+        // Keep source selected in relationship mode for click-click usability.
+        relationshipPreview.setVisible(false);
+        statusHintLabel.setText("relationship: drop on another class");
     }
 
     private static class RelationshipLink {

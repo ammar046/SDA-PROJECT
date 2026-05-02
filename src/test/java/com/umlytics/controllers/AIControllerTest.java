@@ -5,6 +5,7 @@ import com.umlytics.domain.EvaluationReport;
 import com.umlytics.domain.ProjectContext;
 import com.umlytics.domain.UMLModel;
 import com.umlytics.exceptions.DiagramTooSimpleException;
+import com.umlytics.exceptions.ValidationException;
 import com.umlytics.interfaces.IAIEngine;
 import com.umlytics.interfaces.IChatRepository;
 import com.umlytics.interfaces.IEvaluationRepository;
@@ -39,6 +40,12 @@ class AIControllerTest {
         ChatMessage response = controller.consultAI("How to improve cohesion?", 42);
         assertEquals(2, chatRepo.messages.size());
         assertEquals(42, response.getProjectId());
+    }
+
+    @Test
+    void consultAIRejectsInvalidInput() {
+        assertThrows(ValidationException.class, () -> controller.consultAI("", 42));
+        assertThrows(ValidationException.class, () -> controller.consultAI("hello", 0));
     }
 
     private static class StubAI implements IAIEngine {

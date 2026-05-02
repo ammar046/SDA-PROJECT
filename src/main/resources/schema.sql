@@ -13,6 +13,14 @@ CREATE TABLE IF NOT EXISTS uml_diagrams (
     source_type TEXT NOT NULL CHECK(source_type IN ('NL','CODE','UPLOAD','MANUAL')),
     created_date TEXT NOT NULL,
     last_modified_date TEXT NOT NULL,
+    default_class_header_color TEXT DEFAULT 'Blue',
+    default_class_border_color TEXT DEFAULT 'Blue',
+    default_class_font_size REAL DEFAULT 12,
+    default_class_width REAL DEFAULT 200,
+    default_class_height REAL DEFAULT 140,
+    default_edge_color TEXT DEFAULT 'Black',
+    default_edge_dashed INTEGER DEFAULT 0,
+    default_relationship_type TEXT DEFAULT 'ASSOCIATION',
     serialized_model TEXT,
     FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE CASCADE
 );
@@ -28,6 +36,8 @@ CREATE TABLE IF NOT EXISTS uml_classes (
     header_color TEXT DEFAULT 'Blue',
     border_color TEXT DEFAULT 'Blue',
     member_font_size REAL DEFAULT 12,
+    class_width REAL DEFAULT 200,
+    class_height REAL DEFAULT 140,
     FOREIGN KEY (diagram_id) REFERENCES uml_diagrams(diagram_id) ON DELETE CASCADE
 );
 

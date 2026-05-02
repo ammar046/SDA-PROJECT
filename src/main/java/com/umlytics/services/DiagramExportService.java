@@ -35,8 +35,8 @@ import java.util.List;
 
 // GRASP: Pure Fabrication
 public class DiagramExportService implements IExportService {
-    private static final int CLASS_WIDTH = 200;
-    private static final int CLASS_HEIGHT = 140;
+    private static final int DEFAULT_CLASS_WIDTH = 200;
+    private static final int DEFAULT_CLASS_HEIGHT = 140;
     private static final int HEADER_HEIGHT = 30;
     private static final int PADDING = 40;
 
@@ -144,18 +144,21 @@ public class DiagramExportService implements IExportService {
     private void drawClass(Graphics2D g2, UMLClass umlClass, DiagramBounds bounds) {
         int x = (int) Math.round(umlClass.getPositionX() - bounds.minX + PADDING);
         int y = (int) Math.round(umlClass.getPositionY() - bounds.minY + PADDING);
+        int width = classWidth(umlClass);
+        int height = classHeight(umlClass);
+        int compartmentCut = Math.min(height - 20, HEADER_HEIGHT + 44);
 
         Color border = toClassBorderColor(umlClass.getBorderColor());
         Color header = toClassHeaderColor(umlClass.getHeaderColor());
         g2.setColor(Color.WHITE);
-        g2.fillRect(x, y, CLASS_WIDTH, CLASS_HEIGHT);
+        g2.fillRect(x, y, width, height);
         g2.setColor(header);
-        g2.fillRect(x, y, CLASS_WIDTH, HEADER_HEIGHT);
+        g2.fillRect(x, y, width, HEADER_HEIGHT);
         g2.setColor(border);
         g2.setStroke(new BasicStroke(2f));
-        g2.drawRect(x, y, CLASS_WIDTH, CLASS_HEIGHT);
-        g2.drawLine(x, y + HEADER_HEIGHT, x + CLASS_WIDTH, y + HEADER_HEIGHT);
-        g2.drawLine(x, y + HEADER_HEIGHT + 44, x + CLASS_WIDTH, y + HEADER_HEIGHT + 44);
+        g2.drawRect(x, y, width, height);
+        g2.drawLine(x, y + HEADER_HEIGHT, x + width, y + HEADER_HEIGHT);
+        g2.drawLine(x, y + compartmentCut, x + width, y + compartmentCut);
 
         g2.setColor(Color.BLACK);
         g2.setFont(new Font("SansSerif", Font.BOLD, 13));
@@ -167,15 +170,15 @@ public class DiagramExportService implements IExportService {
         for (com.umlytics.domain.Attribute attribute : umlClass.getAttributes()) {
             g2.drawString(formatAttribute(attribute), x + 8, lineY);
             lineY += fontSize + 2;
-            if (lineY > y + HEADER_HEIGHT + 40) {
+            if (lineY > y + compartmentCut - 4) {
                 break;
             }
         }
-        lineY = y + HEADER_HEIGHT + 62;
+        lineY = y + compartmentCut + 18;
         for (com.umlytics.domain.Method method : umlClass.getMethods()) {
             g2.drawString(formatMethod(method), x + 8, lineY);
             lineY += fontSize + 2;
-            if (lineY > y + CLASS_HEIGHT - 8) {
+            if (lineY > y + height - 8) {
                 break;
             }
         }
@@ -188,10 +191,10 @@ public class DiagramExportService implements IExportService {
             return;
         }
 
-        double sx = source.getPositionX() - bounds.minX + PADDING + CLASS_WIDTH / 2.0;
-        double sy = source.getPositionY() - bounds.minY + PADDING + CLASS_HEIGHT / 2.0;
-        double tx = target.getPositionX() - bounds.minX + PADDING + CLASS_WIDTH / 2.0;
-        double ty = target.getPositionY() - bounds.minY + PADDING + CLASS_HEIGHT / 2.0;
+        double sx = source.getPositionX() - bounds.minX + PADDING + classWidth(source) / 2.0;
+        double sy = source.getPositionY() - bounds.minY + PADDING + classHeight(source) / 2.0;
+        double tx = target.getPositionX() - bounds.minX + PADDING + classWidth(target) / 2.0;
+        double ty = target.getPositionY() - bounds.minY + PADDING + classHeight(target) / 2.0;
         double bendX = relationship.getBendX() == null ? (sx + tx) / 2.0 : relationship.getBendX() - bounds.minX + PADDING;
         double bendY = (sy + ty) / 2.0;
 
@@ -294,10 +297,18 @@ public class DiagramExportService implements IExportService {
         for (UMLClass umlClass : diagram.getClasses()) {
             minX = Math.min(minX, umlClass.getPositionX());
             minY = Math.min(minY, umlClass.getPositionY());
-            maxX = Math.max(maxX, umlClass.getPositionX() + CLASS_WIDTH);
-            maxY = Math.max(maxY, umlClass.getPositionY() + CLASS_HEIGHT);
+            maxX = Math.max(maxX, umlClass.getPositionX() + classWidth(umlClass));
+            maxY = Math.max(maxY, umlClass.getPositionY() + classHeight(umlClass));
         }
         return new DiagramBounds(minX, minY, (maxX - minX) + PADDING * 2, (maxY - minY) + PADDING * 2);
+    }
+
+    private int classWidth(UMLClass umlClass) {
+        return (int) Math.max(140, umlClass == null ? DEFAULT_CLASS_WIDTH : umlClass.getClassWidth());
+    }
+
+    private int classHeight(UMLClass umlClass) {
+        return (int) Math.max(90, umlClass == null ? DEFAULT_CLASS_HEIGHT : umlClass.getClassHeight());
     }
 
     private String formatAttribute(com.umlytics.domain.Attribute attribute) {

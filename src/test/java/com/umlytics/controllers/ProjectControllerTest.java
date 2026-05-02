@@ -47,6 +47,18 @@ class ProjectControllerTest {
         assertEquals(0, controller.listAllProjects().size());
     }
 
+    @Test
+    void maintainProjectMissingProjectThrows() {
+        assertThrows(ValidationException.class, () -> controller.maintainProject(999, "name", "desc"));
+    }
+
+    @Test
+    void retrieveProjectLoadsDiagrams() {
+        Project project = controller.createProject("Trace", "desc");
+        Project loaded = controller.retrieveProject(project.getProjectId());
+        assertEquals(1, loaded.getDiagrams().size());
+    }
+
     private static class InMemoryProjectRepository implements IProjectRepository {
         private final List<Project> projects = new ArrayList<>();
         private int id = 1;
@@ -90,7 +102,11 @@ class ProjectControllerTest {
 
         @Override
         public List<UMLDiagram> findByProject(int pid) {
-            return List.of();
+            UMLDiagram diagram = new UMLDiagram();
+            diagram.setDiagramId(100 + pid);
+            diagram.setProjectId(pid);
+            diagram.setTitle("Project " + pid + " Diagram");
+            return List.of(diagram);
         }
 
         @Override

@@ -33,13 +33,19 @@ public class ProjectController {
     }
 
     public Project retrieveProject(int id) {
-        return projectRepo.findById(id);
+        Project project = projectRepo.findById(id);
+        if (project == null) {
+            return null;
+        }
+        project.getDiagrams().clear();
+        project.getDiagrams().addAll(diagramRepo.findByProject(id));
+        return project;
     }
 
     public void maintainProject(int id, String name, String desc) {
         Project project = projectRepo.findById(id);
         if (project == null) {
-            return;
+            throw new ValidationException("Project not found.");
         }
         if (name == null || name.isBlank()) {
             throw new ValidationException("Project name cannot be empty.");

@@ -10,6 +10,7 @@ public class EditToolBar extends ToolBar {
     private final Button relationshipButton;
     private final Button undoButton;
     private final Button redoButton;
+    private final Button saveButton;
 
     public EditToolBar() {
         super();
@@ -19,7 +20,8 @@ public class EditToolBar extends ToolBar {
         relationshipButton = new Button("Relationship");
         undoButton = new Button("Undo");
         redoButton = new Button("Redo");
-        getItems().addAll(selectButton, panButton, classButton, relationshipButton, undoButton, redoButton);
+        saveButton = new Button("Save");
+        getItems().addAll(selectButton, panButton, classButton, relationshipButton, undoButton, redoButton, saveButton);
     }
 
     public Button getSelectButton() {
@@ -44,5 +46,9 @@ public class EditToolBar extends ToolBar {
 
     public Button getRedoButton() {
         return redoButton;
+    }
+
+    public Button getSaveButton() {
+        return saveButton;
     }
 }

@@ -151,5 +151,55 @@ public class DatabaseManager {
         } catch (Exception ignored) {
             // Column already exists.
         }
+        try {
+            statement.execute("ALTER TABLE uml_classes ADD COLUMN class_width REAL DEFAULT 200");
+        } catch (Exception ignored) {
+            // Column already exists.
+        }
+        try {
+            statement.execute("ALTER TABLE uml_classes ADD COLUMN class_height REAL DEFAULT 140");
+        } catch (Exception ignored) {
+            // Column already exists.
+        }
+        try {
+            statement.execute("ALTER TABLE uml_diagrams ADD COLUMN default_class_header_color TEXT DEFAULT 'Blue'");
+        } catch (Exception ignored) {
+            // Column already exists.
+        }
+        try {
+            statement.execute("ALTER TABLE uml_diagrams ADD COLUMN default_class_border_color TEXT DEFAULT 'Blue'");
+        } catch (Exception ignored) {
+            // Column already exists.
+        }
+        try {
+            statement.execute("ALTER TABLE uml_diagrams ADD COLUMN default_class_font_size REAL DEFAULT 12");
+        } catch (Exception ignored) {
+            // Column already exists.
+        }
+        try {
+            statement.execute("ALTER TABLE uml_diagrams ADD COLUMN default_class_width REAL DEFAULT 200");
+        } catch (Exception ignored) {
+            // Column already exists.
+        }
+        try {
+            statement.execute("ALTER TABLE uml_diagrams ADD COLUMN default_class_height REAL DEFAULT 140");
+        } catch (Exception ignored) {
+            // Column already exists.
+        }
+        try {
+            statement.execute("ALTER TABLE uml_diagrams ADD COLUMN default_edge_color TEXT DEFAULT 'Black'");
+        } catch (Exception ignored) {
+            // Column already exists.
+        }
+        try {
+            statement.execute("ALTER TABLE uml_diagrams ADD COLUMN default_edge_dashed INTEGER DEFAULT 0");
+        } catch (Exception ignored) {
+            // Column already exists.
+        }
+        try {
+            statement.execute("ALTER TABLE uml_diagrams ADD COLUMN default_relationship_type TEXT DEFAULT 'ASSOCIATION'");
+        } catch (Exception ignored) {
+            // Column already exists.
+        }
     }
 }

@@ -16,10 +16,7 @@ import java.util.List;
 
 // GRASP: Pure Fabrication, Low Coupling
 public class ProjectRepositoryImpl implements IProjectRepository {
-    private final Connection connection;
-
     public ProjectRepositoryImpl() {
-        this.connection = null;
     }
 
     @Override
@@ -32,20 +29,24 @@ public class ProjectRepositoryImpl implements IProjectRepository {
         if (p.getLastModifiedDate() == null) {
             p.setLastModifiedDate(now);
         }
-        try (Connection conn = DatabaseManager.getInstance().getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+        try (Connection conn = DatabaseManager.getInstance().getConnection()) {
             conn.setAutoCommit(false);
-            ps.setString(1, p.getName());
-            ps.setString(2, p.getDescription());
-            ps.setString(3, p.getCreatedDate().toInstant().toString());
-            ps.setString(4, p.getLastModifiedDate().toInstant().toString());
-            ps.executeUpdate();
-            try (ResultSet rs = ps.getGeneratedKeys()) {
-                if (rs.next()) {
-                    p.setProjectId(rs.getInt(1));
+            try (PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+                ps.setString(1, p.getName());
+                ps.setString(2, p.getDescription());
+                ps.setString(3, p.getCreatedDate().toInstant().toString());
+                ps.setString(4, p.getLastModifiedDate().toInstant().toString());
+                ps.executeUpdate();
+                try (ResultSet rs = ps.getGeneratedKeys()) {
+                    if (rs.next()) {
+                        p.setProjectId(rs.getInt(1));
+                    }
                 }
+                conn.commit();
+            } catch (Exception inner) {
+                conn.rollback();
+                throw inner;
             }
-            conn.commit();
         } catch (Exception e) {
             throw new DatabaseException("Failed to save project.", e);
         }
@@ -87,12 +88,16 @@ public class ProjectRepositoryImpl implements IProjectRepository {
     @Override
     public void delete(int id) {
         String sql = "DELETE FROM projects WHERE project_id = ?";
-        try (Connection conn = DatabaseManager.getInstance().getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
+        try (Connection conn = DatabaseManager.getInstance().getConnection()) {
             conn.setAutoCommit(false);
-            ps.setInt(1, id);
-            ps.executeUpdate();
-            conn.commit();
+            try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                ps.setInt(1, id);
+                ps.executeUpdate();
+                conn.commit();
+            } catch (Exception inner) {
+                conn.rollback();
+                throw inner;
+            }
         } catch (Exception e) {
             throw new DatabaseException("Failed to delete project.", e);
         }
@@ -101,15 +106,19 @@ public class ProjectRepositoryImpl implements IProjectRepository {
     @Override
     public void update(Project p) {
         String sql = "UPDATE projects SET name = ?, description = ?, last_modified_date = ? WHERE project_id = ?";
-        try (Connection conn = DatabaseManager.getInstance().getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
+        try (Connection conn = DatabaseManager.getInstance().getConnection()) {
             conn.setAutoCommit(false);
-            ps.setString(1, p.getName());
-            ps.setString(2, p.getDescription());
-            ps.setString(3, Instant.now().toString());
-            ps.setInt(4, p.getProjectId());
-            ps.executeUpdate();
-            conn.commit();
+            try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                ps.setString(1, p.getName());
+                ps.setString(2, p.getDescription());
+                ps.setString(3, Instant.now().toString());
+                ps.setInt(4, p.getProjectId());
+                ps.executeUpdate();
+                conn.commit();
+            } catch (Exception inner) {
+                conn.rollback();
+                throw inner;
+            }
         } catch (Exception e) {
             throw new DatabaseException("Failed to update project.", e);
         }

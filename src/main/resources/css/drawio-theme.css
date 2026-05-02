@@ -71,3 +71,13 @@
 .score-good { -fx-stroke: #34a853; }
 .score-medium { -fx-stroke: #fbbc04; }
 .score-poor { -fx-stroke: #ea4335; }
+
+.structure-code-view {
+    -fx-font-family: monospace;
+}
+
+.structure-code-scroll {
+    -fx-background-color: #ffffff;
+    -fx-border-color: #d0d0d0;
+    -fx-border-width: 1px;
+}

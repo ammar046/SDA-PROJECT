@@ -10,6 +10,7 @@ import com.umlytics.domain.Relationship;
 import com.umlytics.domain.UMLDiagram;
 import com.umlytics.domain.UMLClass;
 import com.umlytics.enums.Navigability;
+import com.umlytics.enums.RelationshipType;
 import com.umlytics.enums.SourceType;
 import com.umlytics.enums.Visibility;
 import com.umlytics.exceptions.DatabaseException;
@@ -36,7 +37,7 @@ public class DiagramRepositoryImpl implements IDiagramRepository {
 
     @Override
     public void save(UMLDiagram d) {
-        String sql = "INSERT INTO uml_diagrams(project_id, title, source_type, created_date, last_modified_date, serialized_model) VALUES (?, ?, ?, ?, ?, ?)";
+        String sql = "INSERT INTO uml_diagrams(project_id, title, source_type, created_date, last_modified_date, default_class_header_color, default_class_border_color, default_class_font_size, default_class_width, default_class_height, default_edge_color, default_edge_dashed, default_relationship_type, serialized_model) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         Date now = new Date();
         if (d.getCreatedDate() == null) {
             d.setCreatedDate(now);
@@ -52,7 +53,15 @@ public class DiagramRepositoryImpl implements IDiagramRepository {
             ps.setString(3, d.getSourceType() == null ? SourceType.MANUAL.name() : d.getSourceType().name());
             ps.setString(4, d.getCreatedDate().toInstant().toString());
             ps.setString(5, d.getLastModifiedDate().toInstant().toString());
-            ps.setString(6, d.serialize());
+            ps.setString(6, safeString(d.getDefaultClassHeaderColor(), "Blue"));
+            ps.setString(7, safeString(d.getDefaultClassBorderColor(), "Blue"));
+            ps.setDouble(8, d.getDefaultClassFontSize() <= 0 ? 12 : d.getDefaultClassFontSize());
+            ps.setDouble(9, d.getDefaultClassWidth() <= 0 ? 200 : d.getDefaultClassWidth());
+            ps.setDouble(10, d.getDefaultClassHeight() <= 0 ? 140 : d.getDefaultClassHeight());
+            ps.setString(11, safeString(d.getDefaultEdgeColor(), "Black"));
+            ps.setInt(12, d.isDefaultEdgeDashed() ? 1 : 0);
+            ps.setString(13, d.getDefaultRelationshipType() == null ? RelationshipType.ASSOCIATION.name() : d.getDefaultRelationshipType().name());
+            ps.setString(14, d.serialize());
             ps.executeUpdate();
             try (ResultSet rs = ps.getGeneratedKeys()) {
                 if (rs.next()) {
@@ -121,15 +130,23 @@ public class DiagramRepositoryImpl implements IDiagramRepository {
 
     @Override
     public void update(UMLDiagram d) {
-        String sql = "UPDATE uml_diagrams SET title = ?, source_type = ?, last_modified_date = ?, serialized_model = ? WHERE diagram_id = ?";
+        String sql = "UPDATE uml_diagrams SET title = ?, source_type = ?, last_modified_date = ?, default_class_header_color = ?, default_class_border_color = ?, default_class_font_size = ?, default_class_width = ?, default_class_height = ?, default_edge_color = ?, default_edge_dashed = ?, default_relationship_type = ?, serialized_model = ? WHERE diagram_id = ?";
         try (Connection conn = DatabaseManager.getInstance().getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
             conn.setAutoCommit(false);
             ps.setString(1, d.getTitle() == null ? "Untitled Diagram" : d.getTitle());
             ps.setString(2, d.getSourceType() == null ? SourceType.MANUAL.name() : d.getSourceType().name());
             ps.setString(3, Instant.now().toString());
-            ps.setString(4, d.serialize());
-            ps.setInt(5, d.getDiagramId());
+            ps.setString(4, safeString(d.getDefaultClassHeaderColor(), "Blue"));
+            ps.setString(5, safeString(d.getDefaultClassBorderColor(), "Blue"));
+            ps.setDouble(6, d.getDefaultClassFontSize() <= 0 ? 12 : d.getDefaultClassFontSize());
+            ps.setDouble(7, d.getDefaultClassWidth() <= 0 ? 200 : d.getDefaultClassWidth());
+            ps.setDouble(8, d.getDefaultClassHeight() <= 0 ? 140 : d.getDefaultClassHeight());
+            ps.setString(9, safeString(d.getDefaultEdgeColor(), "Black"));
+            ps.setInt(10, d.isDefaultEdgeDashed() ? 1 : 0);
+            ps.setString(11, d.getDefaultRelationshipType() == null ? RelationshipType.ASSOCIATION.name() : d.getDefaultRelationshipType().name());
+            ps.setString(12, d.serialize());
+            ps.setInt(13, d.getDiagramId());
             ps.executeUpdate();
             clearDiagramChildren(conn, d.getDiagramId());
             saveClassesAndRelationships(conn, d);
@@ -147,11 +164,24 @@ public class DiagramRepositoryImpl implements IDiagramRepository {
         diagram.setSourceType(SourceType.valueOf(rs.getString("source_type")));
         diagram.setCreatedDate(Date.from(Instant.parse(rs.getString("created_date"))));
         diagram.setLastModifiedDate(Date.from(Instant.parse(rs.getString("last_modified_date"))));
+        diagram.setDefaultClassHeaderColor(safeString(rs.getString("default_class_header_color"), "Blue"));
+        diagram.setDefaultClassBorderColor(safeString(rs.getString("default_class_border_color"), "Blue"));
+        diagram.setDefaultClassFontSize(rs.getDouble("default_class_font_size") <= 0 ? 12 : rs.getDouble("default_class_font_size"));
+        diagram.setDefaultClassWidth(rs.getDouble("default_class_width") <= 0 ? 200 : rs.getDouble("default_class_width"));
+        diagram.setDefaultClassHeight(rs.getDouble("default_class_height") <= 0 ? 140 : rs.getDouble("default_class_height"));
+        diagram.setDefaultEdgeColor(safeString(rs.getString("default_edge_color"), "Black"));
+        diagram.setDefaultEdgeDashed(rs.getInt("default_edge_dashed") == 1);
+        String defaultType = safeString(rs.getString("default_relationship_type"), RelationshipType.ASSOCIATION.name());
+        try {
+            diagram.setDefaultRelationshipType(RelationshipType.valueOf(defaultType));
+        } catch (Exception ignored) {
+            diagram.setDefaultRelationshipType(RelationshipType.ASSOCIATION);
+        }
         return diagram;
     }
 
     private void saveClassesAndRelationships(Connection conn, UMLDiagram diagram) throws Exception {
-        String classSql = "INSERT INTO uml_classes(diagram_id, name, is_abstract, is_interface, position_x, position_y, header_color, border_color, member_font_size) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        String classSql = "INSERT INTO uml_classes(diagram_id, name, is_abstract, is_interface, position_x, position_y, header_color, border_color, member_font_size, class_width, class_height) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         String attrSql = "INSERT INTO attributes(class_id, name, type, visibility, is_static) VALUES (?, ?, ?, ?, ?)";
         String methodSql = "INSERT INTO methods(class_id, name, return_type, parameters, visibility, is_abstract) VALUES (?, ?, ?, ?, ?, ?)";
         String relSql = "INSERT INTO relationships(diagram_id, source_class_id, target_class_id, relationship_type, source_multiplicity, target_multiplicity, label, is_composition, is_aggregation, is_interface, navigability, dependency_type, bend_x, edge_color, dashed) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
@@ -170,6 +200,8 @@ public class DiagramRepositoryImpl implements IDiagramRepository {
                 classPs.setString(7, umlClass.getHeaderColor() == null ? "Blue" : umlClass.getHeaderColor());
                 classPs.setString(8, umlClass.getBorderColor() == null ? "Blue" : umlClass.getBorderColor());
                 classPs.setDouble(9, umlClass.getMemberFontSize());
+                classPs.setDouble(10, umlClass.getClassWidth() <= 0 ? 200 : umlClass.getClassWidth());
+                classPs.setDouble(11, umlClass.getClassHeight() <= 0 ? 140 : umlClass.getClassHeight());
                 classPs.executeUpdate();
 
                 try (ResultSet rs = classPs.getGeneratedKeys()) {
@@ -278,6 +310,14 @@ public class DiagramRepositoryImpl implements IDiagramRepository {
                     umlClass.setHeaderColor(classRs.getString("header_color"));
                     umlClass.setBorderColor(classRs.getString("border_color"));
                     umlClass.setMemberFontSize(classRs.getDouble("member_font_size"));
+                    umlClass.setClassWidth(classRs.getDouble("class_width"));
+                    umlClass.setClassHeight(classRs.getDouble("class_height"));
+                    if (umlClass.getClassWidth() <= 0) {
+                        umlClass.setClassWidth(200);
+                    }
+                    if (umlClass.getClassHeight() <= 0) {
+                        umlClass.setClassHeight(140);
+                    }
                     idToClass.put(classId, umlClass);
                     diagram.addUMLClass(umlClass);
 
@@ -369,5 +409,12 @@ public class DiagramRepositoryImpl implements IDiagramRepository {
                 }
             }
         }
+    }
+
+    private String safeString(String value, String fallback) {
+        if (value == null || value.isBlank()) {
+            return fallback;
+        }
+        return value;
     }
 }

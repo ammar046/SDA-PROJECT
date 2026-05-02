@@ -1,6 +1,7 @@
 package com.umlytics.domain;
 
 import com.umlytics.enums.SourceType;
+import com.umlytics.enums.RelationshipType;
 
 import java.util.ArrayList;
 import java.util.Date;
@@ -13,6 +14,14 @@ public class UMLDiagram {
     private Date createdDate;
     private Date lastModifiedDate;
     private SourceType sourceType;
+    private String defaultClassHeaderColor = "Blue";
+    private String defaultClassBorderColor = "Blue";
+    private double defaultClassFontSize = 12.0;
+    private double defaultClassWidth = 200.0;
+    private double defaultClassHeight = 140.0;
+    private String defaultEdgeColor = "Black";
+    private boolean defaultEdgeDashed;
+    private RelationshipType defaultRelationshipType = RelationshipType.ASSOCIATION;
     private final List<UMLClass> classes = new ArrayList<>();
     private final List<Relationship> relationships = new ArrayList<>();
 
@@ -31,6 +40,16 @@ public class UMLDiagram {
         builder.append("\"projectId\":").append(projectId).append(",");
         builder.append("\"title\":\"").append(title == null ? "" : escapeJson(title)).append("\",");
         builder.append("\"sourceType\":\"").append(sourceType == null ? "" : sourceType.name()).append("\",");
+        builder.append("\"defaults\":{")
+                .append("\"classHeaderColor\":\"").append(escapeJson(defaultClassHeaderColor)).append("\",")
+                .append("\"classBorderColor\":\"").append(escapeJson(defaultClassBorderColor)).append("\",")
+                .append("\"classFontSize\":").append(defaultClassFontSize).append(",")
+                .append("\"classWidth\":").append(defaultClassWidth).append(",")
+                .append("\"classHeight\":").append(defaultClassHeight).append(",")
+                .append("\"edgeColor\":\"").append(escapeJson(defaultEdgeColor)).append("\",")
+                .append("\"edgeDashed\":").append(defaultEdgeDashed).append(",")
+                .append("\"relationshipType\":\"").append(defaultRelationshipType == null ? RelationshipType.ASSOCIATION.name() : defaultRelationshipType.name()).append("\"")
+                .append("},");
         builder.append("\"classes\":[");
         for (int i = 0; i < classes.size(); i++) {
             UMLClass c = classes.get(i);
@@ -40,7 +59,9 @@ public class UMLDiagram {
                     .append("\"y\":").append(c.getPositionY()).append(",")
                     .append("\"headerColor\":\"").append(c.getHeaderColor() == null ? "Blue" : escapeJson(c.getHeaderColor())).append("\",")
                     .append("\"borderColor\":\"").append(c.getBorderColor() == null ? "Blue" : escapeJson(c.getBorderColor())).append("\",")
-                    .append("\"memberFontSize\":").append(c.getMemberFontSize())
+                    .append("\"memberFontSize\":").append(c.getMemberFontSize()).append(",")
+                    .append("\"width\":").append(c.getClassWidth()).append(",")
+                    .append("\"height\":").append(c.getClassHeight())
                     .append("}");
             if (i < classes.size() - 1) {
                 builder.append(",");
@@ -144,6 +165,70 @@ public class UMLDiagram {
 
     public void setSourceType(SourceType sourceType) {
         this.sourceType = sourceType;
+    }
+
+    public String getDefaultClassHeaderColor() {
+        return defaultClassHeaderColor;
+    }
+
+    public void setDefaultClassHeaderColor(String defaultClassHeaderColor) {
+        this.defaultClassHeaderColor = defaultClassHeaderColor == null || defaultClassHeaderColor.isBlank() ? "Blue" : defaultClassHeaderColor;
+    }
+
+    public String getDefaultClassBorderColor() {
+        return defaultClassBorderColor;
+    }
+
+    public void setDefaultClassBorderColor(String defaultClassBorderColor) {
+        this.defaultClassBorderColor = defaultClassBorderColor == null || defaultClassBorderColor.isBlank() ? "Blue" : defaultClassBorderColor;
+    }
+
+    public double getDefaultClassFontSize() {
+        return defaultClassFontSize;
+    }
+
+    public void setDefaultClassFontSize(double defaultClassFontSize) {
+        this.defaultClassFontSize = defaultClassFontSize <= 0 ? 12.0 : defaultClassFontSize;
+    }
+
+    public double getDefaultClassWidth() {
+        return defaultClassWidth;
+    }
+
+    public void setDefaultClassWidth(double defaultClassWidth) {
+        this.defaultClassWidth = defaultClassWidth <= 0 ? 200.0 : defaultClassWidth;
+    }
+
+    public double getDefaultClassHeight() {
+        return defaultClassHeight;
+    }
+
+    public void setDefaultClassHeight(double defaultClassHeight) {
+        this.defaultClassHeight = defaultClassHeight <= 0 ? 140.0 : defaultClassHeight;
+    }
+
+    public String getDefaultEdgeColor() {
+        return defaultEdgeColor;
+    }
+
+    public void setDefaultEdgeColor(String defaultEdgeColor) {
+        this.defaultEdgeColor = defaultEdgeColor == null || defaultEdgeColor.isBlank() ? "Black" : defaultEdgeColor;
+    }
+
+    public boolean isDefaultEdgeDashed() {
+        return defaultEdgeDashed;
+    }
+
+    public void setDefaultEdgeDashed(boolean defaultEdgeDashed) {
+        this.defaultEdgeDashed = defaultEdgeDashed;
+    }
+
+    public RelationshipType getDefaultRelationshipType() {
+        return defaultRelationshipType;
+    }
+
+    public void setDefaultRelationshipType(RelationshipType defaultRelationshipType) {
+        this.defaultRelationshipType = defaultRelationshipType == null ? RelationshipType.ASSOCIATION : defaultRelationshipType;
     }
 
     private String escapeJson(String value) {

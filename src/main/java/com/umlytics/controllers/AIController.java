@@ -8,6 +8,7 @@ import com.umlytics.domain.UMLModel;
 import com.umlytics.enums.SenderType;
 import com.umlytics.exceptions.DiagramTooSimpleException;
 import com.umlytics.exceptions.EmptyDiagramException;
+import com.umlytics.exceptions.ValidationException;
 import com.umlytics.interfaces.IAIEngine;
 import com.umlytics.interfaces.IChatRepository;
 import com.umlytics.interfaces.IEvaluationRepository;
@@ -34,14 +35,23 @@ public class AIController {
         }
         EvaluationReport report = aiEngine.evaluateDesign(new UMLModel());
         report.setDiagramId(diagramId);
+        if (report.getProjectId() <= 0) {
+            report.setProjectId(diagramId);
+        }
         report.setGeneratedDate(new Date());
         evalRepo.save(report);
         return report;
     }
 
     public ChatMessage consultAI(String query, int projectId) {
+        if (projectId <= 0) {
+            throw new ValidationException("Open a project before consulting AI.");
+        }
+        if (query == null || query.isBlank()) {
+            throw new ValidationException("Query cannot be empty.");
+        }
         ChatMessage userMessage = new ChatMessage();
-        userMessage.setContent(query);
+        userMessage.setContent(query.trim());
         userMessage.setProjectId(projectId);
         userMessage.setSender(SenderType.USER);
         userMessage.setTimestamp(new Date());
@@ -49,7 +59,7 @@ public class AIController {
 
         ProjectContext context = new ProjectContext();
         context.setChatHistory(chatRepo.findByProject(projectId));
-        String response = aiEngine.consultDesign(query, context);
+        String response = aiEngine.consultDesign(query.trim(), context);
 
         ChatMessage aiMessage = new ChatMessage();
         aiMessage.setContent(response);

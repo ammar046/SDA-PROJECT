@@ -2,11 +2,15 @@ package com.umlytics.ui.canvas;
 
 import com.umlytics.domain.Attribute;
 import com.umlytics.domain.Method;
+import com.umlytics.enums.RelationshipType;
 
 import javafx.geometry.Insets;
+import javafx.scene.control.CheckMenuItem;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
+import javafx.scene.control.Menu;
 import javafx.scene.control.MenuItem;
+import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
 import javafx.scene.layout.Background;
 import javafx.scene.layout.BackgroundFill;
@@ -35,8 +39,17 @@ public class ClassNode extends Region {
     private Consumer<String> renameHandler;
     private Runnable addAttributeHandler;
     private Runnable addMethodHandler;
+    private Runnable editClassHandler;
+    private Consumer<RelationshipType> addRelationshipHandler;
+    private Runnable deleteHandler;
+    private Consumer<Boolean> toggleAbstractHandler;
+    private Consumer<Boolean> toggleInterfaceHandler;
+    private Runnable copyHandler;
+    private Runnable pasteHandler;
     private Consumer<String> editAttributesTextHandler;
     private Consumer<String> editMethodsTextHandler;
+    private boolean abstractKind;
+    private boolean interfaceKind;
 
     public ClassNode(String className) {
         root = new VBox();
@@ -74,6 +87,11 @@ public class ClassNode extends Region {
         return titleLabel.getText();
     }
 
+    /** Starts inline rename of the class title (same as double-click). */
+    public void requestRenameEditor() {
+        beginRename();
+    }
+
     public void setSelected(boolean selected) {
         if (selected) {
             root.getStyleClass().add("class-node-selected");
@@ -92,6 +110,39 @@ public class ClassNode extends Region {
 
     public void setAddMethodHandler(Runnable addMethodHandler) {
         this.addMethodHandler = addMethodHandler;
+    }
+
+    public void setEditClassHandler(Runnable editClassHandler) {
+        this.editClassHandler = editClassHandler;
+    }
+
+    public void setAddRelationshipHandler(Consumer<RelationshipType> addRelationshipHandler) {
+        this.addRelationshipHandler = addRelationshipHandler;
+    }
+
+    public void setDeleteHandler(Runnable deleteHandler) {
+        this.deleteHandler = deleteHandler;
+    }
+
+    public void setToggleAbstractHandler(Consumer<Boolean> toggleAbstractHandler) {
+        this.toggleAbstractHandler = toggleAbstractHandler;
+    }
+
+    public void setToggleInterfaceHandler(Consumer<Boolean> toggleInterfaceHandler) {
+        this.toggleInterfaceHandler = toggleInterfaceHandler;
+    }
+
+    public void setCopyHandler(Runnable copyHandler) {
+        this.copyHandler = copyHandler;
+    }
+
+    public void setPasteHandler(Runnable pasteHandler) {
+        this.pasteHandler = pasteHandler;
+    }
+
+    public void setKindFlags(boolean abstractKind, boolean interfaceKind) {
+        this.abstractKind = abstractKind;
+        this.interfaceKind = interfaceKind;
     }
 
     public void setMembers(List<Attribute> attributes, List<Method> methods) {
@@ -163,11 +214,74 @@ public class ClassNode extends Region {
                 addMethodHandler.run();
             }
         });
+        Menu addRelationship = new Menu("Add Relationship ->");
+        for (RelationshipType relationshipType : RelationshipType.values()) {
+            MenuItem relType = new MenuItem(relationshipType.name());
+            relType.setOnAction(event -> {
+                if (addRelationshipHandler != null) {
+                    addRelationshipHandler.accept(relationshipType);
+                }
+            });
+            addRelationship.getItems().add(relType);
+        }
         MenuItem editAttributes = new MenuItem("Edit Attributes");
         editAttributes.setOnAction(event -> beginEditAttributes());
         MenuItem editMethods = new MenuItem("Edit Methods");
         editMethods.setOnAction(event -> beginEditMethods());
-        menu.getItems().addAll(rename, addAttribute, addMethod, editAttributes, editMethods);
+        MenuItem editClass = new MenuItem("Edit Class");
+        editClass.setOnAction(event -> {
+            if (editClassHandler != null) {
+                editClassHandler.run();
+            }
+        });
+        MenuItem deleteClass = new MenuItem("Delete Class");
+        deleteClass.setOnAction(event -> {
+            if (deleteHandler != null) {
+                deleteHandler.run();
+            }
+        });
+        CheckMenuItem setAbstract = new CheckMenuItem("Set Abstract");
+        setAbstract.setSelected(abstractKind);
+        setAbstract.setOnAction(event -> {
+            abstractKind = setAbstract.isSelected();
+            if (setAbstract.isSelected()) {
+                interfaceKind = false;
+            }
+            if (toggleAbstractHandler != null) {
+                toggleAbstractHandler.accept(setAbstract.isSelected());
+            }
+            if (toggleInterfaceHandler != null && !setAbstract.isSelected()) {
+                toggleInterfaceHandler.accept(interfaceKind);
+            }
+        });
+        CheckMenuItem setInterface = new CheckMenuItem("Set Interface");
+        setInterface.setSelected(interfaceKind);
+        setInterface.setOnAction(event -> {
+            interfaceKind = setInterface.isSelected();
+            if (setInterface.isSelected()) {
+                abstractKind = false;
+            }
+            if (toggleInterfaceHandler != null) {
+                toggleInterfaceHandler.accept(setInterface.isSelected());
+            }
+            if (toggleAbstractHandler != null && !setInterface.isSelected()) {
+                toggleAbstractHandler.accept(abstractKind);
+            }
+        });
+        MenuItem copy = new MenuItem("Copy");
+        copy.setOnAction(event -> {
+            if (copyHandler != null) {
+                copyHandler.run();
+            }
+        });
+        MenuItem paste = new MenuItem("Paste");
+        paste.setOnAction(event -> {
+            if (pasteHandler != null) {
+                pasteHandler.run();
+            }
+        });
+        menu.getItems().addAll(rename, addAttribute, addMethod, addRelationship, editClass, editAttributes, editMethods,
+                deleteClass, setAbstract, setInterface, copy, paste);
         setOnContextMenuRequested(event -> menu.show(this, event.getScreenX(), event.getScreenY()));
 
         attributesLabel.setOnMouseClicked(event -> {
@@ -220,8 +334,9 @@ public class ClassNode extends Region {
     }
 
     private void beginEditAttributes() {
-        TextField editor = new TextField(attributesLabel.getText().replace("\n", " | "));
-        editor.setOnAction(event -> finishEditAttributes(editor));
+        TextArea editor = new TextArea(attributesLabel.getText());
+        editor.setWrapText(false);
+        editor.setPrefRowCount(4);
         editor.focusedProperty().addListener((obs, oldVal, focused) -> {
             if (!focused) {
                 finishEditAttributes(editor);
@@ -232,8 +347,8 @@ public class ClassNode extends Region {
         editor.selectAll();
     }
 
-    private void finishEditAttributes(TextField editor) {
-        String updated = editor.getText() == null ? "" : editor.getText().replace(" | ", "\n");
+    private void finishEditAttributes(TextArea editor) {
+        String updated = editor.getText() == null ? "" : editor.getText();
         attributesLabel.setText(updated);
         root.getChildren().set(1, attributesLabel);
         if (editAttributesTextHandler != null) {
@@ -242,8 +357,9 @@ public class ClassNode extends Region {
     }
 
     private void beginEditMethods() {
-        TextField editor = new TextField(methodsLabel.getText().replace("\n", " | "));
-        editor.setOnAction(event -> finishEditMethods(editor));
+        TextArea editor = new TextArea(methodsLabel.getText());
+        editor.setWrapText(false);
+        editor.setPrefRowCount(4);
         editor.focusedProperty().addListener((obs, oldVal, focused) -> {
             if (!focused) {
                 finishEditMethods(editor);
@@ -254,8 +370,8 @@ public class ClassNode extends Region {
         editor.selectAll();
     }
 
-    private void finishEditMethods(TextField editor) {
-        String updated = editor.getText() == null ? "" : editor.getText().replace(" | ", "\n");
+    private void finishEditMethods(TextArea editor) {
+        String updated = editor.getText() == null ? "" : editor.getText();
         methodsLabel.setText(updated);
         root.getChildren().set(2, methodsLabel);
         if (editMethodsTextHandler != null) {

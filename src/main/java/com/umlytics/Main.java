@@ -11,6 +11,7 @@ import com.umlytics.interfaces.IDiagramRepository;
 import com.umlytics.interfaces.IEvaluationRepository;
 import com.umlytics.interfaces.IExportService;
 import com.umlytics.interfaces.IProjectRepository;
+import com.umlytics.interfaces.ISpeechToTextService;
 import com.umlytics.repository.ChatRepositoryImpl;
 import com.umlytics.repository.DiagramRepositoryImpl;
 import com.umlytics.repository.EvaluationRepositoryImpl;
@@ -18,6 +19,7 @@ import com.umlytics.repository.ProjectRepositoryImpl;
 import com.umlytics.services.DiagramExportService;
 import com.umlytics.services.JavaCodeParser;
 import com.umlytics.services.LLMAPIEngine;
+import com.umlytics.services.SpeechToTextServiceImpl;
 import com.umlytics.ui.MainWindow;
 import javafx.application.Application;
 import javafx.stage.Stage;
@@ -34,12 +36,13 @@ public class Main extends Application {
         IAIEngine aiEngine = new LLMAPIEngine();
         ICodeParser codeParser = new JavaCodeParser();
         IExportService exportSvc = new DiagramExportService();
+        ISpeechToTextService speechSvc = new SpeechToTextServiceImpl();
 
         ProjectController projectCtrl = new ProjectController(projectRepo, diagramRepo);
         DiagramController diagramCtrl = new DiagramController(diagramRepo, aiEngine, codeParser, exportSvc);
         AIController aiCtrl = new AIController(aiEngine, chatRepo, evalRepo);
 
-        MainWindow mainWindow = new MainWindow(projectCtrl, diagramCtrl, aiCtrl);
+        MainWindow mainWindow = new MainWindow(projectCtrl, diagramCtrl, aiCtrl, speechSvc);
         mainWindow.start(primaryStage);
     }
 

@@ -1,11 +1,11 @@
 package com.umlytics.controllers;
 
-import com.umlytics.domain.DiagramEdit;
 import com.umlytics.domain.EvaluationReport;
 import com.umlytics.domain.ProjectContext;
 import com.umlytics.domain.UMLDiagram;
 import com.umlytics.domain.UMLModel;
 import com.umlytics.enums.ExportFormat;
+import com.umlytics.exceptions.UnsupportedFormatException;
 import com.umlytics.exceptions.UnsupportedFileException;
 import com.umlytics.exceptions.ValidationException;
 import com.umlytics.interfaces.IAIEngine;
@@ -23,10 +23,12 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class DiagramControllerTest {
     private DiagramController controller;
+    private InMemoryDiagramRepository repository;
 
     @BeforeEach
     void setUp() {
-        controller = new DiagramController(new InMemoryDiagramRepository(), new StubAI(), new StubParser(), new StubExport());
+        repository = new InMemoryDiagramRepository();
+        controller = new DiagramController(repository, new StubAI(), new StubParser(), new StubExport());
     }
 
     @Test
@@ -43,6 +45,36 @@ class DiagramControllerTest {
     @Test
     void generateFromCodeUnsupportedFileThrows() {
         assertThrows(UnsupportedFileException.class, () -> controller.generateFromCode(1, List.of(new File("test.txt"))));
+    }
+
+    @Test
+    void exportDiagramRejectsNullFormat() {
+        UMLDiagram diagram = new UMLDiagram();
+        diagram.setDiagramId(7);
+        repository.save(diagram);
+        assertThrows(UnsupportedFormatException.class, () -> controller.exportDiagram(7, null, "x.png"));
+    }
+
+    @Test
+    void exportDiagramRejectsBlankPath() {
+        UMLDiagram diagram = new UMLDiagram();
+        diagram.setDiagramId(8);
+        repository.save(diagram);
+        assertThrows(ValidationException.class, () -> controller.exportDiagram(8, ExportFormat.PNG, " "));
+    }
+
+    @Test
+    void analyzeUploadedImageRejectsInvalidPayloads() {
+        assertThrows(UnsupportedFileException.class, () -> controller.analyzeUploadedImage(1, new byte[0]));
+        assertThrows(UnsupportedFileException.class, () -> controller.analyzeUploadedImage(1, new byte[]{0x01, 0x02, 0x03}));
+    }
+
+    @Test
+    void refineDiagramRejectsNullEdit() {
+        UMLDiagram diagram = new UMLDiagram();
+        diagram.setDiagramId(9);
+        repository.save(diagram);
+        assertThrows(ValidationException.class, () -> controller.refineDiagram(9, null));
     }
 
     private static class InMemoryDiagramRepository implements IDiagramRepository {

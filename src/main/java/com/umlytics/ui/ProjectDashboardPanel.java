@@ -7,10 +7,13 @@ import javafx.geometry.Insets;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonType;
+import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListView;
 import javafx.scene.control.TextArea;
+import javafx.scene.control.TextField;
 import javafx.scene.control.TextInputDialog;
+import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
@@ -71,19 +74,30 @@ public class ProjectDashboardPanel extends VBox {
         if (projectCtrl == null) {
             return;
         }
-        TextInputDialog nameDialog = new TextInputDialog();
-        nameDialog.setHeaderText("Create Project");
-        nameDialog.setContentText("Name:");
-        Optional<String> maybeName = nameDialog.showAndWait();
-        if (maybeName.isEmpty()) {
+        Dialog<ButtonType> dialog = new Dialog<>();
+        dialog.setTitle("New Project");
+        dialog.setHeaderText("Create a new project");
+        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+
+        TextField nameField = new TextField();
+        nameField.setPromptText("Project name");
+        TextArea descriptionArea = new TextArea();
+        descriptionArea.setPromptText("Project description");
+        descriptionArea.setPrefRowCount(4);
+
+        GridPane form = new GridPane();
+        form.setHgap(8);
+        form.setVgap(8);
+        form.addRow(0, new Label("Name:"), nameField);
+        form.addRow(1, new Label("Description:"), descriptionArea);
+        dialog.getDialogPane().setContent(form);
+
+        Optional<ButtonType> result = dialog.showAndWait();
+        if (result.isEmpty() || result.get() != ButtonType.OK) {
             return;
         }
-        TextInputDialog descDialog = new TextInputDialog();
-        descDialog.setHeaderText("Project Description");
-        descDialog.setContentText("Description:");
-        String desc = descDialog.showAndWait().orElse("");
         try {
-            projectCtrl.createProject(maybeName.get(), desc);
+            projectCtrl.createProject(nameField.getText(), descriptionArea.getText());
             refreshProjects();
         } catch (Exception e) {
             new Alert(Alert.AlertType.ERROR, e.getMessage(), ButtonType.OK).showAndWait();

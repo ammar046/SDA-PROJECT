@@ -13,6 +13,8 @@ public class UMLClass {
     private String headerColor = "Blue";
     private String borderColor = "Blue";
     private double memberFontSize = 12.0;
+    private double classWidth = 200.0;
+    private double classHeight = 140.0;
     private final List<Attribute> attributes = new ArrayList<>();
     private final List<Method> methods = new ArrayList<>();
 
@@ -110,5 +112,21 @@ public class UMLClass {
 
     public void setMemberFontSize(double memberFontSize) {
         this.memberFontSize = memberFontSize;
+    }
+
+    public double getClassWidth() {
+        return classWidth;
+    }
+
+    public void setClassWidth(double classWidth) {
+        this.classWidth = classWidth;
+    }
+
+    public double getClassHeight() {
+        return classHeight;
+    }
+
+    public void setClassHeight(double classHeight) {
+        this.classHeight = classHeight;
     }
 }

@@ -8,7 +8,7 @@ import com.umlytics.domain.DiagramEdit;
 import com.umlytics.domain.InheritanceRelationship;
 import com.umlytics.domain.Method;
 import com.umlytics.domain.Relationship;
-import com.umlytics.domain.UMLClass;
+import com.umlytics.domain.ConceptualClass;
 import com.umlytics.domain.UMLDiagram;
 import com.umlytics.enums.Navigability;
 import com.umlytics.enums.EditType;
@@ -75,13 +75,13 @@ public class DiagramEditorPanel extends BorderPane {
     private final Deque<DiagramEdit> undoStack = new ArrayDeque<>();
     private final Deque<DiagramEdit> redoStack = new ArrayDeque<>();
     private ToolMode toolMode = ToolMode.SELECT;
-    private UMLClass pendingRelationshipSource;
-    private final Map<UMLClass, ClassNode> nodeMap = new HashMap<>();
-    private final Map<UMLClass, List<SelectionHandle>> handlesMap = new HashMap<>();
+    private ConceptualClass pendingRelationshipSource;
+    private final Map<ConceptualClass, ClassNode> nodeMap = new HashMap<>();
+    private final Map<ConceptualClass, List<SelectionHandle>> handlesMap = new HashMap<>();
     private final Map<RelationshipEdge, RelationshipLink> links = new HashMap<>();
     private final Map<RelationshipEdge, Relationship> relationshipMap = new HashMap<>();
-    private final Set<UMLClass> selectedClasses = new HashSet<>();
-    private UMLClass copiedClassTemplate;
+    private final Set<ConceptualClass> selectedClasses = new HashSet<>();
+    private ConceptualClass copiedClassTemplate;
     private RelationshipEdge activeEdgeSelection;
     private SplitPane diagramSplitPane;
     private ToolMode toolModeBeforeSpace;
@@ -147,7 +147,7 @@ public class DiagramEditorPanel extends BorderPane {
     }
 
     public void onAddClass() {
-        UMLClass umlClass = new UMLClass();
+        ConceptualClass umlClass = new ConceptualClass();
         umlClass.setClassId(tempClassId--);
         umlClass.setName("NewClass");
         umlClass.setPositionX(120 + currentDiagram.getClasses().size() * 30);
@@ -157,7 +157,7 @@ public class DiagramEditorPanel extends BorderPane {
         umlClass.setMemberFontSize(currentDiagram.getDefaultClassFontSize());
         umlClass.setClassWidth(currentDiagram.getDefaultClassWidth());
         umlClass.setClassHeight(currentDiagram.getDefaultClassHeight());
-        currentDiagram.addUMLClass(umlClass);
+        currentDiagram.addConceptualClass(umlClass);
         DiagramEdit edit = new DiagramEdit();
         edit.setEditType(EditType.ADD_CLASS);
         edit.getPayload().put("name", umlClass.getName());
@@ -185,7 +185,7 @@ public class DiagramEditorPanel extends BorderPane {
                 ? "diagram"
                 : currentDiagram.getTitle().replaceAll("[^a-zA-Z0-9-_]", "_");
         String path = "exports/" + base + ".png";
-        if (diagramCtrl != null && currentDiagram.getDiagramId() > 0) {
+        if (diagramCtrl != null && currentDiagram.getDiagramId() != null) {
             diagramCtrl.exportDiagram(currentDiagram.getDiagramId(), ExportFormat.PNG, path);
         } else {
             new com.umlytics.services.DiagramExportService().export(currentDiagram, ExportFormat.PNG, path);
@@ -198,13 +198,13 @@ public class DiagramEditorPanel extends BorderPane {
 
     public void renderDiagram(UMLDiagram d) {
         this.currentDiagram = d;
-        this.tempClassId = Math.min(-1, currentDiagram.getClasses().stream().mapToInt(UMLClass::getClassId).min().orElse(0) - 1);
+        this.tempClassId = -1;
         nodeMap.clear();
         links.clear();
         relationshipMap.clear();
         handlesMap.clear();
         canvasLayer.getChildren().setAll(canvas, relationshipPreview, selectionBox);
-        for (UMLClass umlClass : currentDiagram.getClasses()) {
+        for (ConceptualClass umlClass : currentDiagram.getClasses()) {
             addClassNode(umlClass);
         }
         for (Relationship relationship : currentDiagram.getRelationships()) {
@@ -236,7 +236,7 @@ public class DiagramEditorPanel extends BorderPane {
         toolBar.getSaveButton().setOnAction(event -> onSaveDiagram());
     }
 
-    private void addClassNode(UMLClass umlClass) {
+    private void addClassNode(ConceptualClass umlClass) {
         ClassNode node = new ClassNode(umlClass.getName());
         node.setMembers(umlClass.getAttributes(), umlClass.getMethods());
         node.setLayoutX(umlClass.getPositionX());
@@ -251,7 +251,7 @@ public class DiagramEditorPanel extends BorderPane {
             String oldName = umlClass.getName();
             umlClass.setName(newName);
             DiagramEdit renameEdit = new DiagramEdit();
-            renameEdit.setEditType(EditType.RENAME);
+            renameEdit.setEditType(EditType.RENAME_CLASS);
             renameEdit.setTargetClassId(umlClass.getClassId());
             renameEdit.getPayload().put("classRef", umlClass);
             renameEdit.getPayload().put("oldName", oldName);
@@ -272,7 +272,7 @@ public class DiagramEditorPanel extends BorderPane {
             String before = attributesToText(umlClass);
             parseAndApplyAttributes(umlClass, text);
             DiagramEdit edit = new DiagramEdit();
-            edit.setEditType(EditType.EDIT_ATTR);
+            edit.setEditType(EditType.ADD_ATTRIBUTE);
             edit.getPayload().put("classRef", umlClass);
             edit.getPayload().put("target", "attributes");
             edit.getPayload().put("before", before);
@@ -285,7 +285,7 @@ public class DiagramEditorPanel extends BorderPane {
             String before = methodsToText(umlClass);
             parseAndApplyMethods(umlClass, text);
             DiagramEdit edit = new DiagramEdit();
-            edit.setEditType(EditType.EDIT_ATTR);
+            edit.setEditType(EditType.ADD_ATTRIBUTE);
             edit.getPayload().put("classRef", umlClass);
             edit.getPayload().put("target", "methods");
             edit.getPayload().put("before", before);
@@ -350,7 +350,7 @@ public class DiagramEditorPanel extends BorderPane {
         updateSelectionHandles(umlClass);
     }
 
-    private void addVisualRelationship(UMLClass source, UMLClass target, RelationshipType type, Relationship existingRelationship) {
+    private void addVisualRelationship(ConceptualClass source, ConceptualClass target, RelationshipType type, Relationship existingRelationship) {
         ClassNode s = nodeMap.get(source);
         ClassNode t = nodeMap.get(target);
         if (s == null || t == null) {
@@ -396,7 +396,7 @@ public class DiagramEditorPanel extends BorderPane {
         if (existingRelationship == null) {
             currentDiagram.addRelationship(relationship);
             DiagramEdit edit = new DiagramEdit();
-            edit.setEditType(EditType.ADD_REL);
+            edit.setEditType(EditType.ADD_RELATIONSHIP);
             edit.getPayload().put("source", source);
             edit.getPayload().put("target", target);
             edit.getPayload().put("type", type);
@@ -415,7 +415,7 @@ public class DiagramEditorPanel extends BorderPane {
         DiagramEdit previous = undoStack.pop();
         redoStack.push(previous);
         if (previous.getEditType() == EditType.ADD_CLASS && !currentDiagram.getClasses().isEmpty()) {
-            UMLClass last = currentDiagram.getClasses().get(currentDiagram.getClasses().size() - 1);
+            ConceptualClass last = currentDiagram.getClasses().get(currentDiagram.getClasses().size() - 1);
             currentDiagram.getClasses().remove(last);
             ClassNode node = nodeMap.remove(last);
             if (node != null) {
@@ -429,21 +429,21 @@ public class DiagramEditorPanel extends BorderPane {
             refreshMiniMap();
         } else if (previous.getEditType() == EditType.REMOVE_CLASS) {
             Object restored = previous.getPayload().get("classRef");
-            if (restored instanceof UMLClass restoredClass) {
-                currentDiagram.addUMLClass(restoredClass);
+            if (restored instanceof ConceptualClass restoredClass) {
+                currentDiagram.addConceptualClass(restoredClass);
                 addClassNode(restoredClass);
             }
-        } else if (previous.getEditType() == EditType.RENAME) {
+        } else if (previous.getEditType() == EditType.RENAME_CLASS) {
             Object classRef = previous.getPayload().get("classRef");
             Object oldName = previous.getPayload().get("oldName");
-            if (classRef instanceof UMLClass umlClass && oldName instanceof String name) {
+            if (classRef instanceof ConceptualClass umlClass && oldName instanceof String name) {
                 umlClass.setName(name);
                 ClassNode node = nodeMap.get(umlClass);
                 if (node != null) {
                     node.setClassName(name);
                 }
             }
-        } else if (previous.getEditType() == EditType.EDIT_ATTR) {
+        } else if (previous.getEditType() == EditType.ADD_ATTRIBUTE) {
             Object target = previous.getPayload().get("target");
             Object before = previous.getPayload().get("before");
             if (target instanceof String t && "edge".equals(t)) {
@@ -462,7 +462,7 @@ public class DiagramEditorPanel extends BorderPane {
                 }
             } else {
                 Object classRef = previous.getPayload().get("classRef");
-                if (classRef instanceof UMLClass umlClass && target instanceof String t2 && before instanceof String text) {
+                if (classRef instanceof ConceptualClass umlClass && target instanceof String t2 && before instanceof String text) {
                     if ("attributes".equals(t2)) {
                         parseAndApplyAttributes(umlClass, text);
                     } else {
@@ -474,7 +474,7 @@ public class DiagramEditorPanel extends BorderPane {
                     }
                 }
             }
-        } else if (previous.getEditType() == EditType.ADD_REL) {
+        } else if (previous.getEditType() == EditType.ADD_RELATIONSHIP) {
             Object relationshipObj = previous.getPayload().get("relationship");
             if (relationshipObj instanceof Relationship relationship) {
                 RelationshipEdge edge = findEdgeByRelationship(relationship);
@@ -482,12 +482,12 @@ public class DiagramEditorPanel extends BorderPane {
                     removeEdgeInstance(edge, true);
                 }
             }
-        } else if (previous.getEditType() == EditType.REMOVE_REL) {
+        } else if (previous.getEditType() == EditType.REMOVE_RELATIONSHIP) {
             Object source = previous.getPayload().get("source");
             Object target = previous.getPayload().get("target");
             Object type = previous.getPayload().get("type");
             Object relationshipObj = previous.getPayload().get("relationship");
-            if (source instanceof UMLClass s && target instanceof UMLClass t && type instanceof RelationshipType rt) {
+            if (source instanceof ConceptualClass s && target instanceof ConceptualClass t && type instanceof RelationshipType rt) {
                 addVisualRelationship(s, t, rt, relationshipObj instanceof Relationship r ? r : null);
             }
         }
@@ -500,7 +500,7 @@ public class DiagramEditorPanel extends BorderPane {
         DiagramEdit edit = redoStack.pop();
         undoStack.push(edit);
         if (edit.getEditType() == EditType.ADD_CLASS) {
-            UMLClass umlClass = new UMLClass();
+            ConceptualClass umlClass = new ConceptualClass();
             umlClass.setClassId(tempClassId--);
             Object name = edit.getPayload().get("name");
             umlClass.setName(name == null ? "NewClass" : name.toString());
@@ -511,20 +511,20 @@ public class DiagramEditorPanel extends BorderPane {
             umlClass.setMemberFontSize(currentDiagram.getDefaultClassFontSize());
             umlClass.setClassWidth(currentDiagram.getDefaultClassWidth());
             umlClass.setClassHeight(currentDiagram.getDefaultClassHeight());
-            currentDiagram.addUMLClass(umlClass);
+            currentDiagram.addConceptualClass(umlClass);
             addClassNode(umlClass);
             refreshMiniMap();
-        } else if (edit.getEditType() == EditType.RENAME) {
+        } else if (edit.getEditType() == EditType.RENAME_CLASS) {
             Object classRef = edit.getPayload().get("classRef");
             Object newName = edit.getPayload().get("name");
-            if (classRef instanceof UMLClass umlClass && newName instanceof String name) {
+            if (classRef instanceof ConceptualClass umlClass && newName instanceof String name) {
                 umlClass.setName(name);
                 ClassNode node = nodeMap.get(umlClass);
                 if (node != null) {
                     node.setClassName(name);
                 }
             }
-        } else if (edit.getEditType() == EditType.EDIT_ATTR) {
+        } else if (edit.getEditType() == EditType.ADD_ATTRIBUTE) {
             Object target = edit.getPayload().get("target");
             Object after = edit.getPayload().get("after");
             if (target instanceof String t && "edge".equals(t)) {
@@ -543,7 +543,7 @@ public class DiagramEditorPanel extends BorderPane {
                 }
             } else {
                 Object classRef = edit.getPayload().get("classRef");
-                if (classRef instanceof UMLClass umlClass && target instanceof String t2 && after instanceof String text) {
+                if (classRef instanceof ConceptualClass umlClass && target instanceof String t2 && after instanceof String text) {
                     if ("attributes".equals(t2)) {
                         parseAndApplyAttributes(umlClass, text);
                     } else {
@@ -555,15 +555,15 @@ public class DiagramEditorPanel extends BorderPane {
                     }
                 }
             }
-        } else if (edit.getEditType() == EditType.ADD_REL) {
+        } else if (edit.getEditType() == EditType.ADD_RELATIONSHIP) {
             Object source = edit.getPayload().get("source");
             Object target = edit.getPayload().get("target");
             Object type = edit.getPayload().get("type");
             Object relationshipObj = edit.getPayload().get("relationship");
-            if (source instanceof UMLClass s && target instanceof UMLClass t && type instanceof RelationshipType rt) {
+            if (source instanceof ConceptualClass s && target instanceof ConceptualClass t && type instanceof RelationshipType rt) {
                 addVisualRelationship(s, t, rt, relationshipObj instanceof Relationship r ? r : null);
             }
-        } else if (edit.getEditType() == EditType.REMOVE_REL) {
+        } else if (edit.getEditType() == EditType.REMOVE_RELATIONSHIP) {
             Object relationshipObj = edit.getPayload().get("relationship");
             if (relationshipObj instanceof Relationship relationship) {
                 RelationshipEdge edge = findEdgeByRelationship(relationship);
@@ -679,7 +679,7 @@ public class DiagramEditorPanel extends BorderPane {
 
         canvasLayer.setOnMouseReleased(event -> {
             if (toolMode == ToolMode.RELATIONSHIP) {
-                UMLClass target = classFromEventTarget(event.getTarget());
+                ConceptualClass target = classFromEventTarget(event.getTarget());
                 if (target == null || target == pendingRelationshipSource) {
                     target = classAtPoint(event.getX(), event.getY(), pendingRelationshipSource);
                 }
@@ -857,7 +857,7 @@ public class DiagramEditorPanel extends BorderPane {
         if (selectedClasses.isEmpty()) {
             return;
         }
-        UMLClass first = selectedClasses.iterator().next();
+        ConceptualClass first = selectedClasses.iterator().next();
         copiedClassTemplate = cloneClass(first);
         statusHintLabel.setText("copied: " + first.getName());
     }
@@ -878,16 +878,16 @@ public class DiagramEditorPanel extends BorderPane {
         if (selectedClasses.size() != 1) {
             return;
         }
-        UMLClass uml = selectedClasses.iterator().next();
+        ConceptualClass uml = selectedClasses.iterator().next();
         ClassNode node = nodeMap.get(uml);
         if (node != null) {
             node.requestRenameEditor();
         }
     }
 
-    private void configureDrag(ClassNode node, UMLClass umlClass) {
+    private void configureDrag(ClassNode node, ConceptualClass umlClass) {
         final double[] drag = new double[2];
-        final Map<UMLClass, double[]> initialPositions = new HashMap<>();
+        final Map<ConceptualClass, double[]> initialPositions = new HashMap<>();
         node.setOnMousePressed(event -> {
             if (toolMode == ToolMode.PAN) {
                 return;
@@ -913,7 +913,7 @@ public class DiagramEditorPanel extends BorderPane {
             drag[1] = event.getSceneY() - node.getLayoutY();
             initialPositions.clear();
             if (selectedClasses.contains(umlClass) && selectedClasses.size() > 1) {
-                for (UMLClass selected : selectedClasses) {
+                for (ConceptualClass selected : selectedClasses) {
                     ClassNode selectedNode = nodeMap.get(selected);
                     if (selectedNode != null) {
                         initialPositions.put(selected, new double[]{selectedNode.getLayoutX(), selectedNode.getLayoutY()});
@@ -932,8 +932,8 @@ public class DiagramEditorPanel extends BorderPane {
             double deltaX = primaryX - initialPositions.get(umlClass)[0];
             double deltaY = primaryY - initialPositions.get(umlClass)[1];
 
-            for (Map.Entry<UMLClass, double[]> entry : initialPositions.entrySet()) {
-                UMLClass movingClass = entry.getKey();
+            for (Map.Entry<ConceptualClass, double[]> entry : initialPositions.entrySet()) {
+                ConceptualClass movingClass = entry.getKey();
                 double[] original = entry.getValue();
                 ClassNode movingNode = nodeMap.get(movingClass);
                 if (movingNode == null) {
@@ -956,7 +956,7 @@ public class DiagramEditorPanel extends BorderPane {
         return Math.round(value / 10.0) * 10.0;
     }
 
-    private void toggleClassSelection(UMLClass umlClass) {
+    private void toggleClassSelection(ConceptualClass umlClass) {
         ClassNode node = nodeMap.get(umlClass);
         if (node == null) {
             return;
@@ -972,7 +972,7 @@ public class DiagramEditorPanel extends BorderPane {
     }
 
     private void clearSelections() {
-        for (UMLClass selected : selectedClasses) {
+        for (ConceptualClass selected : selectedClasses) {
             ClassNode node = nodeMap.get(selected);
             if (node != null) {
                 node.setSelected(false);
@@ -986,7 +986,7 @@ public class DiagramEditorPanel extends BorderPane {
         activeEdgeSelection = null;
     }
 
-    private void updateSelectionHandles(UMLClass umlClass) {
+    private void updateSelectionHandles(ConceptualClass umlClass) {
         List<SelectionHandle> old = handlesMap.remove(umlClass);
         if (old != null) {
             canvasLayer.getChildren().removeAll(old);
@@ -1017,7 +1017,7 @@ public class DiagramEditorPanel extends BorderPane {
         canvasLayer.getChildren().addAll(handles);
     }
 
-    private void updateRelationshipsForClass(UMLClass umlClass) {
+    private void updateRelationshipsForClass(ConceptualClass umlClass) {
         for (Map.Entry<RelationshipEdge, RelationshipLink> entry : links.entrySet()) {
             RelationshipLink link = entry.getValue();
             if (link.source != umlClass && link.target != umlClass) {
@@ -1039,7 +1039,7 @@ public class DiagramEditorPanel extends BorderPane {
         }
     }
 
-    private void removeRelationshipsForClass(UMLClass umlClass) {
+    private void removeRelationshipsForClass(ConceptualClass umlClass) {
         Set<RelationshipEdge> toRemove = new HashSet<>();
         for (Map.Entry<RelationshipEdge, RelationshipLink> entry : links.entrySet()) {
             if (entry.getValue().source == umlClass || entry.getValue().target == umlClass) {
@@ -1053,9 +1053,9 @@ public class DiagramEditorPanel extends BorderPane {
         if (selectedClasses.isEmpty()) {
             return;
         }
-        Set<UMLClass> toDelete = new HashSet<>(selectedClasses);
+        Set<ConceptualClass> toDelete = new HashSet<>(selectedClasses);
         clearSelections();
-        for (UMLClass umlClass : toDelete) {
+        for (ConceptualClass umlClass : toDelete) {
             DiagramEdit deleteEdit = new DiagramEdit();
             deleteEdit.setEditType(EditType.REMOVE_CLASS);
             deleteEdit.getPayload().put("classRef", umlClass);
@@ -1076,7 +1076,7 @@ public class DiagramEditorPanel extends BorderPane {
         refreshMiniMap();
     }
 
-    private void deleteSingleClass(UMLClass umlClass) {
+    private void deleteSingleClass(ConceptualClass umlClass) {
         if (umlClass == null) {
             return;
         }
@@ -1093,7 +1093,7 @@ public class DiagramEditorPanel extends BorderPane {
         RelationshipLink link = links.get(activeEdgeSelection);
         if (relationship != null && link != null) {
             DiagramEdit edit = new DiagramEdit();
-            edit.setEditType(EditType.REMOVE_REL);
+            edit.setEditType(EditType.REMOVE_RELATIONSHIP);
             edit.getPayload().put("relationship", relationship);
             edit.getPayload().put("source", link.source);
             edit.getPayload().put("target", link.target);
@@ -1124,7 +1124,7 @@ public class DiagramEditorPanel extends BorderPane {
         return null;
     }
 
-    private void showClassFormatControls(UMLClass umlClass) {
+    private void showClassFormatControls(ConceptualClass umlClass) {
         TextField xField = new TextField(String.valueOf((int) umlClass.getPositionX()));
         TextField yField = new TextField(String.valueOf((int) umlClass.getPositionY()));
         xField.setPromptText("X");
@@ -1215,7 +1215,7 @@ public class DiagramEditorPanel extends BorderPane {
             currentDiagram.setDefaultEdgeDashed("Dashed".equals(lineStyleBox.getValue()));
             Map<String, Object> after = captureEdgeState(edge);
             DiagramEdit edit = new DiagramEdit();
-            edit.setEditType(EditType.EDIT_ATTR);
+            edit.setEditType(EditType.ADD_ATTRIBUTE);
             edit.getPayload().put("target", "edge");
             edit.getPayload().put("edgeRef", edge);
             edit.getPayload().put("before", before);
@@ -1234,7 +1234,7 @@ public class DiagramEditorPanel extends BorderPane {
         statusZoomLabel.setText("zoom: " + (int) Math.round(canvas.getZoom() * 100) + "%");
     }
 
-    private Relationship buildRelationship(RelationshipType type, UMLClass source, UMLClass target) {
+    private Relationship buildRelationship(RelationshipType type, ConceptualClass source, ConceptualClass target) {
         Relationship relationship;
         switch (type) {
             case INHERITANCE -> relationship = new InheritanceRelationship();
@@ -1272,7 +1272,7 @@ public class DiagramEditorPanel extends BorderPane {
         return relationship;
     }
 
-    private void addAttributeToClass(UMLClass umlClass, ClassNode node) {
+    private void addAttributeToClass(ConceptualClass umlClass, ClassNode node) {
         Attribute attribute = new Attribute();
         attribute.setName("attribute" + (umlClass.getAttributes().size() + 1));
         attribute.setType("String");
@@ -1281,7 +1281,7 @@ public class DiagramEditorPanel extends BorderPane {
         node.setMembers(umlClass.getAttributes(), umlClass.getMethods());
     }
 
-    private void addMethodToClass(UMLClass umlClass, ClassNode node) {
+    private void addMethodToClass(ConceptualClass umlClass, ClassNode node) {
         Method method = new Method();
         method.setName("method" + (umlClass.getMethods().size() + 1));
         method.setReturnType("void");
@@ -1290,8 +1290,8 @@ public class DiagramEditorPanel extends BorderPane {
         node.setMembers(umlClass.getAttributes(), umlClass.getMethods());
     }
 
-    private UMLClass cloneClass(UMLClass source) {
-        UMLClass copy = new UMLClass();
+    private ConceptualClass cloneClass(ConceptualClass source) {
+        ConceptualClass copy = new ConceptualClass();
         copy.setName(source.getName());
         copy.setAbstract(source.isAbstract());
         copy.setInterface(source.isInterface());
@@ -1314,21 +1314,21 @@ public class DiagramEditorPanel extends BorderPane {
             clone.setReturnType(method.getReturnType());
             clone.setVisibility(method.getVisibility());
             clone.setAbstract(method.isAbstract());
-            clone.setParameters(List.copyOf(method.getParameters()));
+            clone.setParameters(method.getParameters());
             copy.addMethod(clone);
         }
         return copy;
     }
 
-    private void pasteCopiedClassNear(UMLClass anchor) {
+    private void pasteCopiedClassNear(ConceptualClass anchor) {
         if (copiedClassTemplate == null) {
             return;
         }
-        UMLClass pasted = cloneClass(copiedClassTemplate);
+        ConceptualClass pasted = cloneClass(copiedClassTemplate);
         pasted.setClassId(tempClassId--);
         pasted.setPositionX(snap(anchor.getPositionX() + 30));
         pasted.setPositionY(snap(anchor.getPositionY() + 30));
-        currentDiagram.addUMLClass(pasted);
+        currentDiagram.addConceptualClass(pasted);
         addClassNode(pasted);
         refreshMiniMap();
     }
@@ -1337,16 +1337,16 @@ public class DiagramEditorPanel extends BorderPane {
         if (copiedClassTemplate == null) {
             return;
         }
-        UMLClass pasted = cloneClass(copiedClassTemplate);
+        ConceptualClass pasted = cloneClass(copiedClassTemplate);
         pasted.setClassId(tempClassId--);
         pasted.setPositionX(snap(x));
         pasted.setPositionY(snap(y));
-        currentDiagram.addUMLClass(pasted);
+        currentDiagram.addConceptualClass(pasted);
         addClassNode(pasted);
         refreshMiniMap();
     }
 
-    private void parseAndApplyAttributes(UMLClass umlClass, String text) {
+    private void parseAndApplyAttributes(ConceptualClass umlClass, String text) {
         umlClass.getAttributes().clear();
         if (text == null || text.isBlank()) {
             return;
@@ -1370,7 +1370,7 @@ public class DiagramEditorPanel extends BorderPane {
         }
     }
 
-    private void parseAndApplyMethods(UMLClass umlClass, String text) {
+    private void parseAndApplyMethods(ConceptualClass umlClass, String text) {
         umlClass.getMethods().clear();
         if (text == null || text.isBlank()) {
             return;
@@ -1395,13 +1395,13 @@ public class DiagramEditorPanel extends BorderPane {
         }
     }
 
-    private String attributesToText(UMLClass umlClass) {
+    private String attributesToText(ConceptualClass umlClass) {
         return umlClass.getAttributes().stream()
                 .map(a -> visibilityToToken(a.getVisibility()) + " " + a.getName() + ": " + a.getType())
                 .collect(Collectors.joining("\n"));
     }
 
-    private String methodsToText(UMLClass umlClass) {
+    private String methodsToText(ConceptualClass umlClass) {
         return umlClass.getMethods().stream()
                 .map(m -> visibilityToToken(m.getVisibility()) + " " + m.getName() + "(): " + m.getReturnType())
                 .collect(Collectors.joining("\n"));
@@ -1565,7 +1565,7 @@ public class DiagramEditorPanel extends BorderPane {
     }
 
     private void selectClassesInBox(double x, double y, double w, double h) {
-        for (Map.Entry<UMLClass, ClassNode> entry : nodeMap.entrySet()) {
+        for (Map.Entry<ConceptualClass, ClassNode> entry : nodeMap.entrySet()) {
             ClassNode node = entry.getValue();
             double nx = node.getLayoutX();
             double ny = node.getLayoutY();
@@ -1582,14 +1582,14 @@ public class DiagramEditorPanel extends BorderPane {
 
     private void selectAllClasses() {
         clearSelections();
-        for (Map.Entry<UMLClass, ClassNode> entry : nodeMap.entrySet()) {
+        for (Map.Entry<ConceptualClass, ClassNode> entry : nodeMap.entrySet()) {
             selectedClasses.add(entry.getKey());
             entry.getValue().setSelected(true);
             updateSelectionHandles(entry.getKey());
         }
     }
 
-    private void attachResizeHandlers(UMLClass umlClass, ClassNode node, List<SelectionHandle> handles,
+    private void attachResizeHandlers(ConceptualClass umlClass, ClassNode node, List<SelectionHandle> handles,
                                       double startX, double startY, double startW, double startH) {
         if (selectedClasses.size() != 1 || !selectedClasses.contains(umlClass)) {
             return;
@@ -1786,13 +1786,13 @@ public class DiagramEditorPanel extends BorderPane {
         relationshipPreview.setVisible(true);
     }
 
-    private UMLClass classFromEventTarget(Object eventTarget) {
+    private ConceptualClass classFromEventTarget(Object eventTarget) {
         if (!(eventTarget instanceof Node node)) {
             return null;
         }
         Node cursor = node;
         while (cursor != null) {
-            for (Map.Entry<UMLClass, ClassNode> entry : nodeMap.entrySet()) {
+            for (Map.Entry<ConceptualClass, ClassNode> entry : nodeMap.entrySet()) {
                 if (entry.getValue() == cursor) {
                     return entry.getKey();
                 }
@@ -1802,9 +1802,9 @@ public class DiagramEditorPanel extends BorderPane {
         return null;
     }
 
-    private UMLClass classAtPoint(double x, double y, UMLClass exclude) {
-        for (Map.Entry<UMLClass, ClassNode> entry : nodeMap.entrySet()) {
-            UMLClass umlClass = entry.getKey();
+    private ConceptualClass classAtPoint(double x, double y, ConceptualClass exclude) {
+        for (Map.Entry<ConceptualClass, ClassNode> entry : nodeMap.entrySet()) {
+            ConceptualClass umlClass = entry.getKey();
             if (umlClass == exclude) {
                 continue;
             }
@@ -1820,7 +1820,7 @@ public class DiagramEditorPanel extends BorderPane {
         return null;
     }
 
-    private void completeRelationshipCreation(UMLClass target) {
+    private void completeRelationshipCreation(ConceptualClass target) {
         if (pendingRelationshipSource != null && target != null && pendingRelationshipSource != target) {
             RelationshipType type = currentDiagram.getDefaultRelationshipType() == null
                     ? RelationshipType.ASSOCIATION
@@ -1837,11 +1837,11 @@ public class DiagramEditorPanel extends BorderPane {
     }
 
     private static class RelationshipLink {
-        private final UMLClass source;
-        private final UMLClass target;
+        private final ConceptualClass source;
+        private final ConceptualClass target;
         private RelationshipType type;
 
-        private RelationshipLink(UMLClass source, UMLClass target, RelationshipType type) {
+        private RelationshipLink(ConceptualClass source, ConceptualClass target, RelationshipType type) {
             this.source = source;
             this.target = target;
             this.type = type;

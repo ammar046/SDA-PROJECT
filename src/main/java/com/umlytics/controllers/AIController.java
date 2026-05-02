@@ -1,9 +1,9 @@
 package com.umlytics.controllers;
 
+import com.umlytics.domain.ClassSuggestion;
 import com.umlytics.domain.ChatMessage;
-import com.umlytics.domain.EvaluationReport;
+import com.umlytics.domain.DesignEvaluationReport;
 import com.umlytics.domain.ProjectContext;
-import com.umlytics.domain.StructureSuggestion;
 import com.umlytics.domain.UMLModel;
 import com.umlytics.enums.SenderType;
 import com.umlytics.exceptions.DiagramTooSimpleException;
@@ -13,9 +13,9 @@ import com.umlytics.interfaces.IAIEngine;
 import com.umlytics.interfaces.IChatRepository;
 import com.umlytics.interfaces.IEvaluationRepository;
 
-import java.util.Date;
-import java.util.HashMap;
+import java.time.LocalDateTime;
 import java.util.List;
+import java.util.UUID;
 
 // GRASP: Controller, Pure Fabrication
 public class AIController {
@@ -29,60 +29,85 @@ public class AIController {
         this.evalRepo = evalRepo;
     }
 
-    public EvaluationReport evaluateDesign(int diagramId) {
-        if (diagramId <= 0) {
-            throw new DiagramTooSimpleException("At least one valid diagram is required.");
+    public DesignEvaluationReport evaluateDesign(UUID diagramId) {
+        if (diagramId == null) {
+            throw new DiagramTooSimpleException("Valid diagram ID required.");
         }
-        EvaluationReport report = aiEngine.evaluateDesign(new UMLModel());
+        DesignEvaluationReport report = aiEngine.evaluateDesign(new UMLModel());
+        report.setReportId(UUID.randomUUID());
         report.setDiagramId(diagramId);
-        if (report.getProjectId() <= 0) {
-            report.setProjectId(diagramId);
-        }
-        report.setGeneratedDate(new Date());
+        report.setEvaluationDate(LocalDateTime.now());
         evalRepo.save(report);
         return report;
     }
 
-    public ChatMessage consultAI(String query, int projectId) {
-        if (projectId <= 0) {
-            throw new ValidationException("Open a project before consulting AI.");
+    public DesignEvaluationReport evaluateDesign(int diagramId) {
+        return evaluateDesign(UUID.nameUUIDFromBytes(("legacy-diagram-" + diagramId).getBytes()));
+    }
+
+    public ChatMessage submitDesignQuestion(String questionText, UUID projectId) {
+        if (projectId == null) {
+            throw new ValidationException("Open a project first.");
         }
-        if (query == null || query.isBlank()) {
+        if (questionText == null || questionText.isBlank()) {
             throw new ValidationException("Query cannot be empty.");
         }
         ChatMessage userMessage = new ChatMessage();
-        userMessage.setContent(query.trim());
+        userMessage.setMessageId(UUID.randomUUID());
+        userMessage.setContent(questionText.trim());
         userMessage.setProjectId(projectId);
         userMessage.setSender(SenderType.USER);
-        userMessage.setTimestamp(new Date());
+        userMessage.setTimestamp(LocalDateTime.now());
         chatRepo.save(userMessage);
 
         ProjectContext context = new ProjectContext();
         context.setChatHistory(chatRepo.findByProject(projectId));
-        String response = aiEngine.consultDesign(query.trim(), context);
+        String response = aiEngine.consultDesign(questionText.trim(), context);
 
         ChatMessage aiMessage = new ChatMessage();
+        aiMessage.setMessageId(UUID.randomUUID());
         aiMessage.setContent(response);
         aiMessage.setProjectId(projectId);
         aiMessage.setSender(SenderType.AI);
-        aiMessage.setTimestamp(new Date());
+        aiMessage.setTimestamp(LocalDateTime.now());
         chatRepo.save(aiMessage);
         return aiMessage;
     }
 
-    public StructureSuggestion generateStructureSuggestions(int diagramId) {
-        if (diagramId <= 0) {
-            throw new EmptyDiagramException("No classes defined for structure generation.");
+    public ChatMessage submitDesignQuestion(String questionText, int projectId) {
+        return submitDesignQuestion(questionText, UUID.nameUUIDFromBytes(("legacy-project-" + projectId).getBytes()));
+    }
+
+    public ClassSuggestion generateStructureSuggestions(UUID diagramId) {
+        if (diagramId == null) {
+            throw new EmptyDiagramException("No diagram selected.");
         }
         String response = aiEngine.generateStructure(new UMLModel());
-        StructureSuggestion suggestion = new StructureSuggestion();
+        ClassSuggestion suggestion = new ClassSuggestion();
+        suggestion.setSuggestionId(UUID.randomUUID());
         suggestion.setDiagramId(diagramId);
-        suggestion.setCodeSkeletons(new HashMap<>());
-        suggestion.getSkeletons().put("Generated", response);
+        suggestion.setSkeletonCode(response);
+        suggestion.setAccepted(false);
         return suggestion;
     }
 
-    public List<ChatMessage> getChatHistory(int projectId) {
+    public ClassSuggestion generateStructureSuggestions(int diagramId) {
+        return generateStructureSuggestions(UUID.nameUUIDFromBytes(("legacy-diagram-" + diagramId).getBytes()));
+    }
+
+    public ClassSuggestion generateClassSuggestions(UUID diagramId) {
+        return generateStructureSuggestions(diagramId);
+    }
+
+    public ClassSuggestion generateClassSuggestions(int diagramId) {
+        return generateStructureSuggestions(diagramId);
+    }
+
+    public List<ChatMessage> getChatHistory(UUID projectId) {
         return chatRepo.findByProject(projectId);
+    }
+
+    public List<ChatMessage> getChatHistory(int projectId) {
+        return getChatHistory(UUID.nameUUIDFromBytes(("legacy-project-" + projectId).getBytes()));
     }
 }

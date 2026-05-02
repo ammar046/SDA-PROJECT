@@ -1,8 +1,8 @@
 package com.umlytics.ui;
 
 import com.umlytics.controllers.AIController;
-import com.umlytics.domain.EvaluationReport;
-import com.umlytics.domain.StructureSuggestion;
+import com.umlytics.domain.DesignEvaluationReport;
+import com.umlytics.domain.ClassSuggestion;
 import javafx.geometry.Insets;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
@@ -25,6 +25,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 public class EvaluationPanel extends VBox {
     private AIController aiCtrl;
@@ -38,7 +39,7 @@ public class EvaluationPanel extends VBox {
     private final ScrollPane structureCodeScroll;
     private final Map<String, String> structureSkeletons = new LinkedHashMap<>();
     private final Label statusLabel;
-    private EvaluationReport lastReport;
+    private DesignEvaluationReport lastReport;
     private int activeDiagramId = 1;
 
     public EvaluationPanel() {
@@ -95,7 +96,7 @@ public class EvaluationPanel extends VBox {
             return;
         }
         try {
-            EvaluationReport report = aiCtrl.evaluateDesign(activeDiagramId);
+            DesignEvaluationReport report = aiCtrl.evaluateDesign(activeDiagramId);
             displayReport(report);
             statusLabel.setText("Evaluation generated.");
         } catch (Exception e) {
@@ -110,7 +111,7 @@ public class EvaluationPanel extends VBox {
             return;
         }
         try {
-            StructureSuggestion structureSuggestion = aiCtrl.generateStructureSuggestions(activeDiagramId);
+            ClassSuggestion structureSuggestion = aiCtrl.generateClassSuggestions(activeDiagramId);
             Map<String, String> skel = structureSuggestion.getSkeletons();
             structureSkeletons.clear();
             if (skel != null) {
@@ -152,7 +153,7 @@ public class EvaluationPanel extends VBox {
         }
     }
 
-    public void displayReport(EvaluationReport r) {
+    public void displayReport(DesignEvaluationReport r) {
         this.lastReport = r;
         showEvaluationSuggestionMode();
         couplingScoreLabel.setText("Coupling: " + r.getCouplingScore());
@@ -170,6 +171,10 @@ public class EvaluationPanel extends VBox {
         this.activeDiagramId = activeDiagramId;
     }
 
+    public void setActiveDiagramId(UUID activeDiagramId) {
+        this.activeDiagramId = activeDiagramId == null ? 1 : activeDiagramId.hashCode();
+    }
+
     private void showEvaluationSuggestionMode() {
         evaluationSuggestionsList.setVisible(true);
         evaluationSuggestionsList.setManaged(true);
@@ -184,7 +189,7 @@ public class EvaluationPanel extends VBox {
         structureViewer.setManaged(true);
     }
 
-    private void exportReportToPdf(EvaluationReport report, File output) throws Exception {
+    private void exportReportToPdf(DesignEvaluationReport report, File output) throws Exception {
         try (PDDocument document = new PDDocument()) {
             PDPage page = new PDPage();
             document.addPage(page);

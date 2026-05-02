@@ -9,42 +9,38 @@ import com.umlytics.interfaces.IChatRepository;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
-import java.sql.Statement;
-import java.time.Instant;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.List;
+import java.util.UUID;
 
 // GRASP: Pure Fabrication
 public class ChatRepositoryImpl implements IChatRepository {
-    private final Connection connection;
-
     public ChatRepositoryImpl() {
-        this.connection = null;
     }
 
     @Override
     public void save(ChatMessage m) {
-        String sql = "INSERT INTO chat_messages(project_id, content, sender, timestamp) VALUES (?, ?, ?, ?)";
+        String sql = "INSERT INTO chat_message(message_id, project_id, class_id, sender_role, content, timestamp) VALUES (?, ?, ?, ?, ?, ?)";
         if (m.getTimestamp() == null) {
-            m.setTimestamp(new Date());
+            m.setTimestamp(LocalDateTime.now());
         }
         if (m.getSender() == null) {
             m.setSender(SenderType.USER);
         }
+        if (m.getMessageId() == null) {
+            m.setMessageId(UUID.randomUUID());
+        }
         try (Connection conn = DatabaseManager.getInstance().getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+             PreparedStatement ps = conn.prepareStatement(sql)) {
             conn.setAutoCommit(false);
-            ps.setInt(1, m.getProjectId());
-            ps.setString(2, m.getContent());
-            ps.setString(3, m.getSender().name());
-            ps.setString(4, m.getTimestamp().toInstant().toString());
+            ps.setString(1, m.getMessageId().toString());
+            ps.setString(2, m.getProjectId() == null ? null : m.getProjectId().toString());
+            ps.setString(3, m.getClassId() == null ? null : m.getClassId().toString());
+            ps.setString(4, m.getSender().name());
+            ps.setString(5, m.getContent());
+            ps.setString(6, m.getTimestamp().toString());
             ps.executeUpdate();
-            try (ResultSet rs = ps.getGeneratedKeys()) {
-                if (rs.next()) {
-                    m.setMessageId(rs.getInt(1));
-                }
-            }
             conn.commit();
         } catch (Exception e) {
             throw new DatabaseException("Failed to save chat message.", e);
@@ -52,20 +48,24 @@ public class ChatRepositoryImpl implements IChatRepository {
     }
 
     @Override
-    public List<ChatMessage> findByProject(int pid) {
-        String sql = "SELECT * FROM chat_messages WHERE project_id = ? ORDER BY timestamp ASC";
+    public List<ChatMessage> findByProject(UUID projectId) {
+        String sql = "SELECT * FROM chat_message WHERE project_id = ? ORDER BY timestamp ASC";
         List<ChatMessage> messages = new ArrayList<>();
         try (Connection conn = DatabaseManager.getInstance().getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setInt(1, pid);
+            ps.setString(1, projectId.toString());
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
                     ChatMessage message = new ChatMessage();
-                    message.setMessageId(rs.getInt("message_id"));
-                    message.setProjectId(rs.getInt("project_id"));
+                    message.setMessageId(UUID.fromString(rs.getString("message_id")));
+                    message.setProjectId(UUID.fromString(rs.getString("project_id")));
+                    String classId = rs.getString("class_id");
+                    if (classId != null && !classId.isBlank()) {
+                        message.setClassId(UUID.fromString(classId));
+                    }
                     message.setContent(rs.getString("content"));
-                    message.setSender(SenderType.valueOf(rs.getString("sender")));
-                    message.setTimestamp(Date.from(Instant.parse(rs.getString("timestamp"))));
+                    message.setSender(SenderType.valueOf(rs.getString("sender_role")));
+                    message.setTimestamp(LocalDateTime.parse(rs.getString("timestamp")));
                     messages.add(message);
                 }
             }
@@ -76,12 +76,12 @@ public class ChatRepositoryImpl implements IChatRepository {
     }
 
     @Override
-    public void delete(int id) {
-        String sql = "DELETE FROM chat_messages WHERE message_id = ?";
+    public void delete(UUID id) {
+        String sql = "DELETE FROM chat_message WHERE message_id = ?";
         try (Connection conn = DatabaseManager.getInstance().getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
             conn.setAutoCommit(false);
-            ps.setInt(1, id);
+            ps.setString(1, id.toString());
             ps.executeUpdate();
             conn.commit();
         } catch (Exception e) {

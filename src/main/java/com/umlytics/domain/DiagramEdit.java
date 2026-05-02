@@ -4,10 +4,11 @@ import com.umlytics.enums.EditType;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.UUID;
 
 public class DiagramEdit {
     private EditType editType;
-    private int targetClassId;
+    private UUID targetClassId;
     private Map<String, Object> payload = new HashMap<>();
 
     public void apply(UMLDiagram diagram) {
@@ -16,18 +17,19 @@ public class DiagramEdit {
         }
         switch (editType) {
             case ADD_CLASS -> {
-                UMLClass umlClass = new UMLClass();
+                ConceptualClass conceptualClass = new ConceptualClass();
                 Object className = payload.get("name");
-                umlClass.setName(className == null ? "NewClass" : className.toString());
-                diagram.addUMLClass(umlClass);
+                conceptualClass.setName(className == null ? "NewClass" : className.toString());
+                conceptualClass.setClassId(UUID.randomUUID());
+                diagram.addConceptualClass(conceptualClass);
             }
-            case REMOVE_CLASS -> diagram.removeUMLClass(targetClassId);
-            case RENAME -> {
+            case REMOVE_CLASS -> diagram.removeConceptualClass(targetClassId);
+            case RENAME_CLASS -> {
                 Object name = payload.get("name");
                 if (name != null) {
-                    for (UMLClass umlClass : diagram.getClasses()) {
-                        if (umlClass.getClassId() == targetClassId) {
-                            umlClass.setName(name.toString());
+                    for (ConceptualClass conceptualClass : diagram.getClasses()) {
+                        if (targetClassId != null && targetClassId.equals(conceptualClass.getClassId())) {
+                            conceptualClass.setName(name.toString());
                             break;
                         }
                     }
@@ -47,11 +49,11 @@ public class DiagramEdit {
         this.editType = editType;
     }
 
-    public int getTargetClassId() {
+    public UUID getTargetClassId() {
         return targetClassId;
     }
 
-    public void setTargetClassId(int targetClassId) {
+    public void setTargetClassId(UUID targetClassId) {
         this.targetClassId = targetClassId;
     }
 

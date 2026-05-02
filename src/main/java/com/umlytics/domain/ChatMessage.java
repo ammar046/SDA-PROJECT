@@ -2,14 +2,16 @@ package com.umlytics.domain;
 
 import com.umlytics.enums.SenderType;
 
-import java.util.Date;
+import java.time.LocalDateTime;
+import java.util.UUID;
 
 public class ChatMessage {
-    private int messageId;
+    private UUID messageId;
     private String content;
     private SenderType sender;
-    private Date timestamp;
-    private int projectId;
+    private LocalDateTime timestamp;
+    private UUID projectId;
+    private UUID classId;
 
     public String getContent() {
         return content;
@@ -19,15 +21,15 @@ public class ChatMessage {
         return sender;
     }
 
-    public Date getTimestamp() {
+    public LocalDateTime getTimestamp() {
         return timestamp;
     }
 
-    public int getMessageId() {
+    public UUID getMessageId() {
         return messageId;
     }
 
-    public void setMessageId(int messageId) {
+    public void setMessageId(UUID messageId) {
         this.messageId = messageId;
     }
 
@@ -39,15 +41,23 @@ public class ChatMessage {
         this.sender = sender;
     }
 
-    public void setTimestamp(Date timestamp) {
+    public void setTimestamp(LocalDateTime timestamp) {
         this.timestamp = timestamp;
     }
 
-    public int getProjectId() {
+    public UUID getProjectId() {
         return projectId;
     }
 
-    public void setProjectId(int projectId) {
+    public void setProjectId(UUID projectId) {
         this.projectId = projectId;
+    }
+
+    public UUID getClassId() {
+        return classId;
+    }
+
+    public void setClassId(UUID classId) {
+        this.classId = classId;
     }
 }

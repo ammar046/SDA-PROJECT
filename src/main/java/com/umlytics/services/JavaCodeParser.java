@@ -7,10 +7,11 @@ import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.body.FieldDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.umlytics.domain.Attribute;
+import com.umlytics.domain.ConceptualClass;
 import com.umlytics.domain.Method;
 import com.umlytics.domain.Relationship;
-import com.umlytics.domain.UMLClass;
 import com.umlytics.domain.UMLModel;
+import com.umlytics.enums.ClassType;
 import com.umlytics.enums.Visibility;
 import com.umlytics.exceptions.ParsingException;
 import com.umlytics.exceptions.UnsupportedFileException;
@@ -19,6 +20,7 @@ import com.umlytics.interfaces.ICodeParser;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 // GRASP: Pure Fabrication
 public class JavaCodeParser implements ICodeParser {
@@ -32,7 +34,7 @@ public class JavaCodeParser implements ICodeParser {
 
     @Override
     public UMLModel parse(List<File> files) {
-        List<UMLClass> parsedClasses = new ArrayList<>();
+        List<ConceptualClass> parsedClasses = new ArrayList<>();
         for (File file : files) {
             if (!file.getName().endsWith(".java")) {
                 throw new UnsupportedFileException("Unsupported file: " + file.getName());
@@ -40,29 +42,38 @@ public class JavaCodeParser implements ICodeParser {
             try {
                 CompilationUnit unit = StaticJavaParser.parse(file);
                 unit.findAll(ClassOrInterfaceDeclaration.class).forEach(decl -> {
-                    UMLClass umlClass = new UMLClass();
-                    umlClass.setName(decl.getNameAsString());
-                    umlClass.setAbstract(decl.isAbstract());
-                    umlClass.setInterface(decl.isInterface());
+                    ConceptualClass conceptualClass = new ConceptualClass();
+                    conceptualClass.setClassId(UUID.randomUUID());
+                    conceptualClass.setName(decl.getNameAsString());
+                    if (decl.isInterface()) {
+                        conceptualClass.setClassType(ClassType.INTERFACE);
+                    } else if (decl.isAbstract()) {
+                        conceptualClass.setClassType(ClassType.ABSTRACT);
+                    } else {
+                        conceptualClass.setClassType(ClassType.ENTITY);
+                    }
 
                     for (FieldDeclaration field : decl.getFields()) {
                         Attribute attribute = new Attribute();
-                        attribute.setName(field.getVariable(0).getNameAsString());
-                        attribute.setType(field.getVariable(0).getTypeAsString());
+                        attribute.setAttributeId(UUID.randomUUID());
+                        attribute.setAttributeName(field.getVariable(0).getNameAsString());
+                        attribute.setDataType(field.getVariable(0).getTypeAsString());
                         attribute.setStatic(field.isStatic());
                         attribute.setVisibility(extractVisibility(field.isPublic(), field.isProtected(), field.isPrivate()));
-                        umlClass.addAttribute(attribute);
+                        conceptualClass.addAttribute(attribute);
                     }
 
                     for (MethodDeclaration methodDeclaration : decl.getMethods()) {
                         Method method = new Method();
-                        method.setName(methodDeclaration.getNameAsString());
+                        method.setMethodId(UUID.randomUUID());
+                        method.setMethodName(methodDeclaration.getNameAsString());
                         method.setReturnType(methodDeclaration.getTypeAsString());
                         method.setAbstract(methodDeclaration.isAbstract());
                         method.setVisibility(extractVisibility(methodDeclaration.isPublic(), methodDeclaration.isProtected(), methodDeclaration.isPrivate()));
-                        umlClass.addMethod(method);
+                        method.setParameters(methodDeclaration.getParameters().toString());
+                        conceptualClass.addMethod(method);
                     }
-                    parsedClasses.add(umlClass);
+                    parsedClasses.add(conceptualClass);
                 });
             } catch (ParseProblemException e) {
                 throw new ParsingException("Parsing failed for file: " + file.getName(), e);
@@ -81,7 +92,7 @@ public class JavaCodeParser implements ICodeParser {
         return supportedLang;
     }
 
-    private List<UMLClass> extractClasses(AST ast) {
+    private List<ConceptualClass> extractClasses(AST ast) {
         return new ArrayList<>();
     }
 

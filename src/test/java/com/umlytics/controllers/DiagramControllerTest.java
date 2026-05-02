@@ -1,6 +1,6 @@
 package com.umlytics.controllers;
 
-import com.umlytics.domain.EvaluationReport;
+import com.umlytics.domain.DesignEvaluationReport;
 import com.umlytics.domain.ProjectContext;
 import com.umlytics.domain.UMLDiagram;
 import com.umlytics.domain.UMLModel;
@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Test;
 
 import java.io.File;
 import java.util.List;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -24,57 +25,59 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 class DiagramControllerTest {
     private DiagramController controller;
     private InMemoryDiagramRepository repository;
+    private UUID projectId;
 
     @BeforeEach
     void setUp() {
         repository = new InMemoryDiagramRepository();
         controller = new DiagramController(repository, new StubAI(), new StubParser(), new StubExport());
+        projectId = UUID.randomUUID();
     }
 
     @Test
     void generateFromTextTooShortThrows() {
-        assertThrows(ValidationException.class, () -> controller.generateFromNL(1, "short"));
+        assertThrows(ValidationException.class, () -> controller.generateFromText(projectId, "short"));
     }
 
     @Test
     void generateFromTextValid() {
-        UMLDiagram diagram = controller.generateFromNL(1, "Generate classes for library management");
+        UMLDiagram diagram = controller.generateFromText(projectId, "Generate classes for library management");
         assertNotNull(diagram);
     }
 
     @Test
     void generateFromCodeUnsupportedFileThrows() {
-        assertThrows(UnsupportedFileException.class, () -> controller.generateFromCode(1, List.of(new File("test.txt"))));
+        assertThrows(UnsupportedFileException.class, () -> controller.generateFromCode(projectId, List.of(new File("test.txt"))));
     }
 
     @Test
     void exportDiagramRejectsNullFormat() {
         UMLDiagram diagram = new UMLDiagram();
-        diagram.setDiagramId(7);
+        diagram.setDiagramId(UUID.randomUUID());
         repository.save(diagram);
-        assertThrows(UnsupportedFormatException.class, () -> controller.exportDiagram(7, null, "x.png"));
+        assertThrows(UnsupportedFormatException.class, () -> controller.exportDiagram(diagram.getDiagramId(), null, "x.png"));
     }
 
     @Test
     void exportDiagramRejectsBlankPath() {
         UMLDiagram diagram = new UMLDiagram();
-        diagram.setDiagramId(8);
+        diagram.setDiagramId(UUID.randomUUID());
         repository.save(diagram);
-        assertThrows(ValidationException.class, () -> controller.exportDiagram(8, ExportFormat.PNG, " "));
+        assertThrows(ValidationException.class, () -> controller.exportDiagram(diagram.getDiagramId(), ExportFormat.PNG, " "));
     }
 
     @Test
     void analyzeUploadedImageRejectsInvalidPayloads() {
-        assertThrows(UnsupportedFileException.class, () -> controller.analyzeUploadedImage(1, new byte[0]));
-        assertThrows(UnsupportedFileException.class, () -> controller.analyzeUploadedImage(1, new byte[]{0x01, 0x02, 0x03}));
+        assertThrows(UnsupportedFileException.class, () -> controller.analyzeUploadedImage(projectId, new byte[0]));
+        assertThrows(UnsupportedFileException.class, () -> controller.analyzeUploadedImage(projectId, new byte[]{0x01, 0x02, 0x03}));
     }
 
     @Test
     void refineDiagramRejectsNullEdit() {
         UMLDiagram diagram = new UMLDiagram();
-        diagram.setDiagramId(9);
+        diagram.setDiagramId(UUID.randomUUID());
         repository.save(diagram);
-        assertThrows(ValidationException.class, () -> controller.refineDiagram(9, null));
+        assertThrows(ValidationException.class, () -> controller.modifyClassDefinition(diagram.getDiagramId(), null));
     }
 
     private static class InMemoryDiagramRepository implements IDiagramRepository {
@@ -86,17 +89,17 @@ class DiagramControllerTest {
         }
 
         @Override
-        public UMLDiagram findById(int id) {
+        public UMLDiagram findById(UUID id) {
             return diagram;
         }
 
         @Override
-        public List<UMLDiagram> findByProject(int pid) {
+        public List<UMLDiagram> findByProject(UUID pid) {
             return diagram == null ? List.of() : List.of(diagram);
         }
 
         @Override
-        public void delete(int id) {
+        public void delete(UUID id) {
             diagram = null;
         }
 
@@ -113,8 +116,8 @@ class DiagramControllerTest {
         }
 
         @Override
-        public EvaluationReport evaluateDesign(UMLModel m) {
-            return new EvaluationReport();
+        public DesignEvaluationReport evaluateDesign(UMLModel m) {
+            return new DesignEvaluationReport();
         }
 
         @Override

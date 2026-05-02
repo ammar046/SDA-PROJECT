@@ -122,84 +122,108 @@ public class DatabaseManager {
 
     private void applySchemaMigrations(Statement statement) {
         try {
-            statement.execute("ALTER TABLE relationships ADD COLUMN bend_x REAL");
+            // Non-destructive migration path from legacy plural/integer schema.
+            statement.execute("""
+                INSERT OR IGNORE INTO project(project_id, name, description, created_date, last_modified)
+                SELECT CAST(project_id AS TEXT), name, description, created_date, last_modified_date
+                FROM projects
+                """);
         } catch (Exception ignored) {
-            // Column already exists.
+            // Legacy table may not exist.
         }
         try {
-            statement.execute("ALTER TABLE relationships ADD COLUMN edge_color TEXT DEFAULT 'Black'");
+            statement.execute("""
+                INSERT OR IGNORE INTO uml_diagram(diagram_id, project_id, name, source_type, render_state, last_updated)
+                SELECT CAST(diagram_id AS TEXT), CAST(project_id AS TEXT), title,
+                       CASE source_type
+                            WHEN 'NL' THEN 'NATURAL_LANGUAGE'
+                            WHEN 'CODE' THEN 'SOURCE_CODE'
+                            WHEN 'UPLOAD' THEN 'UPLOADED_IMAGE'
+                            ELSE source_type
+                       END,
+                       'PENDING',
+                       last_modified_date
+                FROM uml_diagrams
+                """);
         } catch (Exception ignored) {
-            // Column already exists.
+            // Legacy table may not exist.
         }
         try {
-            statement.execute("ALTER TABLE relationships ADD COLUMN dashed INTEGER DEFAULT 0");
+            statement.execute("""
+                INSERT OR IGNORE INTO conceptual_class(class_id, diagram_id, class_name, class_type, visibility, position_x, position_y, header_color, border_color, member_font_size, class_width, class_height)
+                SELECT CAST(class_id AS TEXT), CAST(diagram_id AS TEXT), name,
+                       CASE WHEN is_interface = 1 THEN 'INTERFACE'
+                            WHEN is_abstract = 1 THEN 'ABSTRACT'
+                            ELSE 'ENTITY' END,
+                       'PUBLIC',
+                       position_x, position_y,
+                       COALESCE(header_color, 'Blue'),
+                       COALESCE(border_color, 'Blue'),
+                       COALESCE(member_font_size, 12.0),
+                       COALESCE(class_width, 200),
+                       COALESCE(class_height, 140)
+                FROM uml_classes
+                """);
         } catch (Exception ignored) {
-            // Column already exists.
+            // Legacy table may not exist.
         }
         try {
-            statement.execute("ALTER TABLE uml_classes ADD COLUMN header_color TEXT DEFAULT 'Blue'");
+            statement.execute("""
+                INSERT OR IGNORE INTO attribute(attribute_id, class_id, attribute_name, data_type, default_value, visibility)
+                SELECT CAST(attribute_id AS TEXT), CAST(class_id AS TEXT), name, type, NULL, visibility
+                FROM attributes
+                """);
         } catch (Exception ignored) {
-            // Column already exists.
+            // Legacy table may not exist.
         }
         try {
-            statement.execute("ALTER TABLE uml_classes ADD COLUMN border_color TEXT DEFAULT 'Blue'");
+            statement.execute("""
+                INSERT OR IGNORE INTO method(method_id, class_id, method_name, return_type, parameters, visibility)
+                SELECT CAST(method_id AS TEXT), CAST(class_id AS TEXT), name, return_type, parameters, visibility
+                FROM methods
+                """);
         } catch (Exception ignored) {
-            // Column already exists.
+            // Legacy table may not exist.
         }
         try {
-            statement.execute("ALTER TABLE uml_classes ADD COLUMN member_font_size REAL DEFAULT 12");
+            statement.execute("""
+                INSERT OR IGNORE INTO relationship(relationship_id, diagram_id, relationship_type, source_class_id, target_class_id, source_multiplicity, target_multiplicity, label, bend_x, edge_color, dashed)
+                SELECT CAST(relationship_id AS TEXT), CAST(diagram_id AS TEXT), relationship_type,
+                       CAST(source_class_id AS TEXT), CAST(target_class_id AS TEXT),
+                       source_multiplicity, target_multiplicity, label, bend_x,
+                       COALESCE(edge_color, 'Black'), COALESCE(dashed, 0)
+                FROM relationships
+                """);
         } catch (Exception ignored) {
-            // Column already exists.
+            // Legacy table may not exist.
         }
         try {
-            statement.execute("ALTER TABLE uml_classes ADD COLUMN class_width REAL DEFAULT 200");
+            statement.execute("""
+                INSERT OR IGNORE INTO chat_message(message_id, project_id, class_id, sender_role, content, timestamp)
+                SELECT CAST(message_id AS TEXT), CAST(project_id AS TEXT), NULL, sender, content, timestamp
+                FROM chat_messages
+                """);
         } catch (Exception ignored) {
-            // Column already exists.
+            // Legacy table may not exist.
         }
         try {
-            statement.execute("ALTER TABLE uml_classes ADD COLUMN class_height REAL DEFAULT 140");
+            statement.execute("""
+                INSERT OR IGNORE INTO design_evaluation_report(report_id, diagram_id, project_id, coupling_score, cohesion_score, solid_score, feedback_summary, evaluation_date)
+                SELECT CAST(report_id AS TEXT), CAST(diagram_id AS TEXT), CAST(project_id AS TEXT),
+                       coupling_score, cohesion_score, solid_score, suggestions, generated_date
+                FROM evaluation_reports
+                """);
         } catch (Exception ignored) {
-            // Column already exists.
+            // Legacy table may not exist.
         }
         try {
-            statement.execute("ALTER TABLE uml_diagrams ADD COLUMN default_class_header_color TEXT DEFAULT 'Blue'");
+            statement.execute("""
+                INSERT OR IGNORE INTO class_suggestion(suggestion_id, class_id, diagram_id, skeleton_code, explanation, accepted)
+                SELECT CAST(suggestion_id AS TEXT), NULL, CAST(diagram_id AS TEXT), code_skeletons, NULL, 0
+                FROM structure_suggestions
+                """);
         } catch (Exception ignored) {
-            // Column already exists.
-        }
-        try {
-            statement.execute("ALTER TABLE uml_diagrams ADD COLUMN default_class_border_color TEXT DEFAULT 'Blue'");
-        } catch (Exception ignored) {
-            // Column already exists.
-        }
-        try {
-            statement.execute("ALTER TABLE uml_diagrams ADD COLUMN default_class_font_size REAL DEFAULT 12");
-        } catch (Exception ignored) {
-            // Column already exists.
-        }
-        try {
-            statement.execute("ALTER TABLE uml_diagrams ADD COLUMN default_class_width REAL DEFAULT 200");
-        } catch (Exception ignored) {
-            // Column already exists.
-        }
-        try {
-            statement.execute("ALTER TABLE uml_diagrams ADD COLUMN default_class_height REAL DEFAULT 140");
-        } catch (Exception ignored) {
-            // Column already exists.
-        }
-        try {
-            statement.execute("ALTER TABLE uml_diagrams ADD COLUMN default_edge_color TEXT DEFAULT 'Black'");
-        } catch (Exception ignored) {
-            // Column already exists.
-        }
-        try {
-            statement.execute("ALTER TABLE uml_diagrams ADD COLUMN default_edge_dashed INTEGER DEFAULT 0");
-        } catch (Exception ignored) {
-            // Column already exists.
-        }
-        try {
-            statement.execute("ALTER TABLE uml_diagrams ADD COLUMN default_relationship_type TEXT DEFAULT 'ASSOCIATION'");
-        } catch (Exception ignored) {
-            // Column already exists.
+            // Legacy table may not exist.
         }
     }
 }

@@ -16,6 +16,7 @@ import javafx.scene.layout.VBox;
 import javafx.util.Duration;
 
 import java.util.List;
+import java.util.UUID;
 
 public class ChatPanel extends VBox {
     private AIController aiCtrl;
@@ -63,7 +64,7 @@ public class ChatPanel extends VBox {
             return;
         }
         try {
-            aiCtrl.consultAI(text.trim(), activeProjectId);
+            aiCtrl.submitDesignQuestion(text.trim(), activeProjectId);
             displayMessages(aiCtrl.getChatHistory(activeProjectId));
             inputField.clear();
         } catch (Exception e) {
@@ -109,5 +110,9 @@ public class ChatPanel extends VBox {
 
     public void setActiveProjectId(int activeProjectId) {
         this.activeProjectId = activeProjectId;
+    }
+
+    public void setActiveProjectId(UUID activeProjectId) {
+        this.activeProjectId = activeProjectId == null ? 1 : activeProjectId.hashCode();
     }
 }

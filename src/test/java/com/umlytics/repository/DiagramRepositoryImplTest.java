@@ -3,13 +3,14 @@ package com.umlytics.repository;
 import com.umlytics.db.DatabaseManager;
 import com.umlytics.domain.AssociationRelationship;
 import com.umlytics.domain.Attribute;
-import com.umlytics.domain.UMLClass;
+import com.umlytics.domain.ConceptualClass;
 import com.umlytics.domain.UMLDiagram;
 import com.umlytics.enums.SourceType;
 import com.umlytics.enums.Visibility;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -27,11 +28,11 @@ class DiagramRepositoryImplTest {
         DiagramRepositoryImpl repo = new DiagramRepositoryImpl();
 
         UMLDiagram diagram = new UMLDiagram();
-        diagram.setProjectId(1);
+        diagram.setProjectId(UUID.randomUUID());
         diagram.setTitle("Repo Test Diagram");
         diagram.setSourceType(SourceType.MANUAL);
 
-        UMLClass user = new UMLClass();
+        ConceptualClass user = new ConceptualClass();
         user.setName("User");
         user.setPositionX(100);
         user.setPositionY(100);
@@ -41,13 +42,13 @@ class DiagramRepositoryImplTest {
         id.setVisibility(Visibility.PRIVATE);
         user.addAttribute(id);
 
-        UMLClass order = new UMLClass();
+        ConceptualClass order = new ConceptualClass();
         order.setName("Order");
         order.setPositionX(300);
         order.setPositionY(100);
 
-        diagram.addUMLClass(user);
-        diagram.addUMLClass(order);
+        diagram.addConceptualClass(user);
+        diagram.addConceptualClass(order);
 
         AssociationRelationship relation = new AssociationRelationship();
         relation.setSourceClass(user);

@@ -1,15 +1,16 @@
 package com.umlytics.interfaces;
 
-import com.umlytics.domain.EvaluationReport;
+import com.umlytics.domain.DesignEvaluationReport;
 
 import java.util.List;
+import java.util.UUID;
 
 public interface IEvaluationRepository {
-    void save(EvaluationReport r);
+    void save(DesignEvaluationReport r);
 
-    List<EvaluationReport> findByProject(int pid);
+    List<DesignEvaluationReport> findByProject(UUID projectId);
 
-    EvaluationReport findByDiagram(int did);
+    DesignEvaluationReport findByDiagram(UUID diagramId);
 
-    void delete(int id);
+    void delete(UUID id);
 }

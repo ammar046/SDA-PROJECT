@@ -1,6 +1,6 @@
 package com.umlytics.services;
 
-import com.umlytics.domain.EvaluationReport;
+import com.umlytics.domain.DesignEvaluationReport;
 import com.umlytics.domain.UMLModel;
 import org.junit.jupiter.api.Test;
 
@@ -24,7 +24,7 @@ class LLMAPIEngineTest {
     @Test
     void evaluateDesignReturnsReport() {
         LLMAPIEngine engine = new LLMAPIEngine();
-        EvaluationReport report = engine.evaluateDesign(new UMLModel());
+        DesignEvaluationReport report = engine.evaluateDesign(new UMLModel());
         assertNotNull(report);
     }
 }

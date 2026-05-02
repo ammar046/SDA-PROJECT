@@ -14,7 +14,7 @@ import com.umlytics.interfaces.IProjectRepository;
 import com.umlytics.interfaces.ISpeechToTextService;
 import com.umlytics.repository.ChatRepositoryImpl;
 import com.umlytics.repository.DiagramRepositoryImpl;
-import com.umlytics.repository.EvaluationRepositoryImpl;
+import com.umlytics.repository.DesignEvaluationRepositoryImpl;
 import com.umlytics.repository.ProjectRepositoryImpl;
 import com.umlytics.services.DiagramExportService;
 import com.umlytics.services.JavaCodeParser;
@@ -32,7 +32,7 @@ public class Main extends Application {
         IProjectRepository projectRepo = new ProjectRepositoryImpl();
         IDiagramRepository diagramRepo = new DiagramRepositoryImpl();
         IChatRepository chatRepo = new ChatRepositoryImpl();
-        IEvaluationRepository evalRepo = new EvaluationRepositoryImpl();
+        IEvaluationRepository evalRepo = new DesignEvaluationRepositoryImpl();
         IAIEngine aiEngine = new LLMAPIEngine();
         ICodeParser codeParser = new JavaCodeParser();
         IExportService exportSvc = new DiagramExportService();

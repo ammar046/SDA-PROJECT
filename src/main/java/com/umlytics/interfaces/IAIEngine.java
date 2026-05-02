@@ -1,13 +1,13 @@
 package com.umlytics.interfaces;
 
-import com.umlytics.domain.EvaluationReport;
+import com.umlytics.domain.DesignEvaluationReport;
 import com.umlytics.domain.ProjectContext;
 import com.umlytics.domain.UMLModel;
 
 public interface IAIEngine {
     UMLModel generateFromText(String desc);
 
-    EvaluationReport evaluateDesign(UMLModel m);
+    DesignEvaluationReport evaluateDesign(UMLModel m);
 
     String consultDesign(String q, ProjectContext ctx);
 

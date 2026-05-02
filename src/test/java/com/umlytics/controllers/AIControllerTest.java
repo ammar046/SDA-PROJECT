@@ -1,7 +1,7 @@
 package com.umlytics.controllers;
 
 import com.umlytics.domain.ChatMessage;
-import com.umlytics.domain.EvaluationReport;
+import com.umlytics.domain.DesignEvaluationReport;
 import com.umlytics.domain.ProjectContext;
 import com.umlytics.domain.UMLModel;
 import com.umlytics.exceptions.DiagramTooSimpleException;
@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -32,20 +33,22 @@ class AIControllerTest {
 
     @Test
     void evaluateDesignRejectsInvalidDiagram() {
-        assertThrows(DiagramTooSimpleException.class, () -> controller.evaluateDesign(0));
+        assertThrows(DiagramTooSimpleException.class, () -> controller.evaluateDesign((UUID) null));
     }
 
     @Test
-    void consultAIStoresBothMessages() {
-        ChatMessage response = controller.consultAI("How to improve cohesion?", 42);
+    void submitDesignQuestionStoresBothMessages() {
+        UUID projectId = UUID.randomUUID();
+        ChatMessage response = controller.submitDesignQuestion("How to improve cohesion?", projectId);
         assertEquals(2, chatRepo.messages.size());
-        assertEquals(42, response.getProjectId());
+        assertEquals(projectId, response.getProjectId());
     }
 
     @Test
-    void consultAIRejectsInvalidInput() {
-        assertThrows(ValidationException.class, () -> controller.consultAI("", 42));
-        assertThrows(ValidationException.class, () -> controller.consultAI("hello", 0));
+    void submitDesignQuestionRejectsInvalidInput() {
+        UUID projectId = UUID.randomUUID();
+        assertThrows(ValidationException.class, () -> controller.submitDesignQuestion("", projectId));
+        assertThrows(ValidationException.class, () -> controller.submitDesignQuestion("hello", (UUID) null));
     }
 
     private static class StubAI implements IAIEngine {
@@ -55,8 +58,8 @@ class AIControllerTest {
         }
 
         @Override
-        public EvaluationReport evaluateDesign(UMLModel m) {
-            EvaluationReport report = new EvaluationReport();
+        public DesignEvaluationReport evaluateDesign(UMLModel m) {
+            DesignEvaluationReport report = new DesignEvaluationReport();
             report.setSuggestions(List.of("Improve layering"));
             return report;
         }
@@ -86,32 +89,32 @@ class AIControllerTest {
         }
 
         @Override
-        public List<ChatMessage> findByProject(int pid) {
-            return messages.stream().filter(m -> m.getProjectId() == pid).toList();
+        public List<ChatMessage> findByProject(UUID pid) {
+            return messages.stream().filter(m -> pid.equals(m.getProjectId())).toList();
         }
 
         @Override
-        public void delete(int id) {
+        public void delete(UUID id) {
         }
     }
 
     private static class InMemoryEvalRepo implements IEvaluationRepository {
         @Override
-        public void save(EvaluationReport r) {
+        public void save(DesignEvaluationReport r) {
         }
 
         @Override
-        public List<EvaluationReport> findByProject(int pid) {
+        public List<DesignEvaluationReport> findByProject(UUID pid) {
             return List.of();
         }
 
         @Override
-        public EvaluationReport findByDiagram(int did) {
+        public DesignEvaluationReport findByDiagram(UUID did) {
             return null;
         }
 
         @Override
-        public void delete(int id) {
+        public void delete(UUID id) {
         }
     }
 }

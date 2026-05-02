@@ -129,7 +129,7 @@ public class ProjectDashboardPanel extends VBox {
         if (projectCtrl == null) {
             return;
         }
-        displayProjects(projectCtrl.listAllProjects());
+        displayProjects(projectCtrl.getAllProjects());
     }
 
     private void onEditProject() {
@@ -156,7 +156,7 @@ public class ProjectDashboardPanel extends VBox {
             return;
         }
         try {
-            projectCtrl.maintainProject(selected.getProjectId(), maybeName.get(), descriptionArea.getText());
+            projectCtrl.updateProjectMetadata(selected.getProjectId(), maybeName.get(), descriptionArea.getText());
             refreshProjects();
         } catch (Exception e) {
             new Alert(Alert.AlertType.ERROR, e.getMessage(), ButtonType.OK).showAndWait();

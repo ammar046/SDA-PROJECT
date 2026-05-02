@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -43,35 +44,34 @@ class ProjectControllerTest {
     }
 
     @Test
-    void listAllProjectsEmpty() {
-        assertEquals(0, controller.listAllProjects().size());
+    void getAllProjectsEmpty() {
+        assertEquals(0, controller.getAllProjects().size());
     }
 
     @Test
-    void maintainProjectMissingProjectThrows() {
-        assertThrows(ValidationException.class, () -> controller.maintainProject(999, "name", "desc"));
+    void updateProjectMetadataMissingProjectThrows() {
+        assertThrows(ValidationException.class, () -> controller.updateProjectMetadata(UUID.randomUUID(), "name", "desc"));
     }
 
     @Test
-    void retrieveProjectLoadsDiagrams() {
+    void openProjectLoadsDiagrams() {
         Project project = controller.createProject("Trace", "desc");
-        Project loaded = controller.retrieveProject(project.getProjectId());
+        Project loaded = controller.openProject(project.getProjectId());
         assertEquals(1, loaded.getDiagrams().size());
     }
 
     private static class InMemoryProjectRepository implements IProjectRepository {
         private final List<Project> projects = new ArrayList<>();
-        private int id = 1;
 
         @Override
         public void save(Project p) {
-            p.setProjectId(id++);
+            p.setProjectId(UUID.randomUUID());
             projects.add(p);
         }
 
         @Override
-        public Project findById(int id) {
-            return projects.stream().filter(p -> p.getProjectId() == id).findFirst().orElse(null);
+        public Project findById(UUID id) {
+            return projects.stream().filter(p -> id.equals(p.getProjectId())).findFirst().orElse(null);
         }
 
         @Override
@@ -80,8 +80,8 @@ class ProjectControllerTest {
         }
 
         @Override
-        public void delete(int id) {
-            projects.removeIf(p -> p.getProjectId() == id);
+        public void delete(UUID id) {
+            projects.removeIf(p -> id.equals(p.getProjectId()));
         }
 
         @Override
@@ -96,21 +96,21 @@ class ProjectControllerTest {
         }
 
         @Override
-        public UMLDiagram findById(int id) {
+        public UMLDiagram findById(UUID id) {
             return null;
         }
 
         @Override
-        public List<UMLDiagram> findByProject(int pid) {
+        public List<UMLDiagram> findByProject(UUID pid) {
             UMLDiagram diagram = new UMLDiagram();
-            diagram.setDiagramId(100 + pid);
+            diagram.setDiagramId(UUID.randomUUID());
             diagram.setProjectId(pid);
-            diagram.setTitle("Project " + pid + " Diagram");
+            diagram.setTitle("Project Diagram");
             return List.of(diagram);
         }
 
         @Override
-        public void delete(int id) {
+        public void delete(UUID id) {
         }
 
         @Override

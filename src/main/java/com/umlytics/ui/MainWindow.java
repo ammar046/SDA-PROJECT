@@ -3,6 +3,7 @@ package com.umlytics.ui;
 import com.umlytics.controllers.AIController;
 import com.umlytics.controllers.DiagramController;
 import com.umlytics.controllers.ProjectController;
+import com.umlytics.domain.DiagramImage;
 import com.umlytics.domain.Project;
 import com.umlytics.domain.UMLDiagram;
 import com.umlytics.enums.ExportFormat;
@@ -145,9 +146,9 @@ public class MainWindow extends Application {
         diagramMenu.getItems().addAll(generateFromText, generateFromCode, uploadImage, export);
         Menu aiMenu = new Menu("AI");
         MenuItem evaluateDesign = new MenuItem("Evaluate Design");
-        MenuItem consultAI = new MenuItem("Consult AI");
+        MenuItem submitDesignQuestion = new MenuItem("Consult AI");
         MenuItem generateSuggestions = new MenuItem("Generate Suggestions");
-        aiMenu.getItems().addAll(evaluateDesign, consultAI, generateSuggestions);
+        aiMenu.getItems().addAll(evaluateDesign, submitDesignQuestion, generateSuggestions);
         Menu helpMenu = new Menu("Help");
         menuBar.getMenus().addAll(fileMenu, diagramMenu, aiMenu, helpMenu);
 
@@ -172,7 +173,7 @@ public class MainWindow extends Application {
         uploadImage.setOnAction(event -> handleUploadImage(primaryStage));
         export.setOnAction(event -> exportActiveDiagram(primaryStage));
         evaluateDesign.setOnAction(event -> showEvaluationPanel());
-        consultAI.setOnAction(event -> showChatPanel());
+        submitDesignQuestion.setOnAction(event -> showChatPanel());
         generateSuggestions.setOnAction(event -> showEvaluationPanel(true));
 
         HBox statusBar = new HBox(24);
@@ -213,7 +214,7 @@ public class MainWindow extends Application {
         if (project == null) {
             return;
         }
-        this.activeProject = projectCtrl.retrieveProject(project.getProjectId());
+        this.activeProject = projectCtrl.openProject(project.getProjectId());
         List<UMLDiagram> diagrams = diagramCtrl.listProjectDiagrams(project.getProjectId());
         if (diagrams.isEmpty()) {
             UMLDiagram empty = new UMLDiagram();
@@ -249,7 +250,7 @@ public class MainWindow extends Application {
             return;
         }
         try {
-            UMLDiagram diagram = diagramCtrl.generateFromNL(activeProject.getProjectId(), result.get());
+            UMLDiagram diagram = diagramCtrl.generateFromText(activeProject.getProjectId(), result.get());
             showDiagramEditor(diagram, "Generated: " + diagram.getTitle());
         } catch (Exception e) {
             new Alert(Alert.AlertType.ERROR, "Generation failed: " + e.getMessage()).show();
@@ -288,8 +289,11 @@ public class MainWindow extends Application {
         }
         try {
             byte[] data = Files.readAllBytes(file.toPath());
-            UMLDiagram diagram = diagramCtrl.analyzeUploadedImage(activeProject.getProjectId(), data);
-            showDiagramEditor(diagram, "Image Import: " + diagram.getTitle());
+            DiagramImage image = diagramCtrl.analyzeUploadedImage(activeProject.getProjectId(), data);
+            UMLDiagram diagram = new UMLDiagram();
+            diagram.setProjectId(activeProject.getProjectId());
+            diagram.setTitle("Image Import");
+            showDiagramEditor(diagram, "Image Import: " + (image.getFileName() == null ? "diagram" : image.getFileName()));
         } catch (Exception e) {
             new Alert(Alert.AlertType.ERROR, "Image analysis failed: " + e.getMessage()).show();
         }
@@ -342,7 +346,7 @@ public class MainWindow extends Application {
             return;
         }
         try {
-            if (diagram.getDiagramId() <= 0) {
+            if (diagram.getDiagramId() == null) {
                 diagramCtrl.saveDiagram(diagram);
             }
             diagramCtrl.exportDiagram(diagram.getDiagramId(), format, out.getAbsolutePath());

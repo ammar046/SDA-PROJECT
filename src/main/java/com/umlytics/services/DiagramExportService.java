@@ -2,7 +2,7 @@ package com.umlytics.services;
 
 import com.umlytics.domain.AssociationRelationship;
 import com.umlytics.domain.Relationship;
-import com.umlytics.domain.UMLClass;
+import com.umlytics.domain.ConceptualClass;
 import com.umlytics.domain.UMLDiagram;
 import com.umlytics.enums.ExportFormat;
 import com.umlytics.enums.RelationshipType;
@@ -136,12 +136,12 @@ public class DiagramExportService implements IExportService {
         for (Relationship relationship : diagram.getRelationships()) {
             drawRelationship(g2, relationship, bounds);
         }
-        for (UMLClass umlClass : diagram.getClasses()) {
+        for (ConceptualClass umlClass : diagram.getClasses()) {
             drawClass(g2, umlClass, bounds);
         }
     }
 
-    private void drawClass(Graphics2D g2, UMLClass umlClass, DiagramBounds bounds) {
+    private void drawClass(Graphics2D g2, ConceptualClass umlClass, DiagramBounds bounds) {
         int x = (int) Math.round(umlClass.getPositionX() - bounds.minX + PADDING);
         int y = (int) Math.round(umlClass.getPositionY() - bounds.minY + PADDING);
         int width = classWidth(umlClass);
@@ -185,8 +185,8 @@ public class DiagramExportService implements IExportService {
     }
 
     private void drawRelationship(Graphics2D g2, Relationship relationship, DiagramBounds bounds) {
-        UMLClass source = relationship.getSource();
-        UMLClass target = relationship.getTarget();
+        ConceptualClass source = relationship.getSource();
+        ConceptualClass target = relationship.getTarget();
         if (source == null || target == null) {
             return;
         }
@@ -294,7 +294,7 @@ public class DiagramExportService implements IExportService {
         double minY = Double.MAX_VALUE;
         double maxX = Double.MIN_VALUE;
         double maxY = Double.MIN_VALUE;
-        for (UMLClass umlClass : diagram.getClasses()) {
+        for (ConceptualClass umlClass : diagram.getClasses()) {
             minX = Math.min(minX, umlClass.getPositionX());
             minY = Math.min(minY, umlClass.getPositionY());
             maxX = Math.max(maxX, umlClass.getPositionX() + classWidth(umlClass));
@@ -303,11 +303,11 @@ public class DiagramExportService implements IExportService {
         return new DiagramBounds(minX, minY, (maxX - minX) + PADDING * 2, (maxY - minY) + PADDING * 2);
     }
 
-    private int classWidth(UMLClass umlClass) {
+    private int classWidth(ConceptualClass umlClass) {
         return (int) Math.max(140, umlClass == null ? DEFAULT_CLASS_WIDTH : umlClass.getClassWidth());
     }
 
-    private int classHeight(UMLClass umlClass) {
+    private int classHeight(ConceptualClass umlClass) {
         return (int) Math.max(90, umlClass == null ? DEFAULT_CLASS_HEIGHT : umlClass.getClassHeight());
     }
 

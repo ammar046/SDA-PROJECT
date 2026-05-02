@@ -1,40 +1,42 @@
 package com.umlytics.domain;
 
 import com.umlytics.enums.Visibility;
+import java.util.UUID;
 
 public class Attribute {
-    private int attributeId;
-    private String name;
-    private String type;
+    private UUID attributeId;
+    private String attributeName;
+    private String dataType;
+    private String defaultValue;
     private Visibility visibility;
     private boolean isStatic;
 
     public String getName() {
-        return name;
+        return attributeName;
     }
 
     public String getType() {
-        return type;
+        return dataType;
     }
 
     public Visibility getVisibility() {
         return visibility;
     }
 
-    public int getAttributeId() {
+    public UUID getAttributeId() {
         return attributeId;
     }
 
-    public void setAttributeId(int attributeId) {
+    public void setAttributeId(UUID attributeId) {
         this.attributeId = attributeId;
     }
 
     public void setName(String name) {
-        this.name = name;
+        this.attributeName = name;
     }
 
     public void setType(String type) {
-        this.type = type;
+        this.dataType = type;
     }
 
     public void setVisibility(Visibility visibility) {
@@ -47,5 +49,34 @@ public class Attribute {
 
     public void setStatic(boolean aStatic) {
         isStatic = aStatic;
+    }
+
+    public String getAttributeName() {
+        return attributeName;
+    }
+
+    public void setAttributeName(String attributeName) {
+        this.attributeName = attributeName;
+    }
+
+    public String getDataType() {
+        return dataType;
+    }
+
+    public void setDataType(String dataType) {
+        this.dataType = dataType;
+    }
+
+    public String getDefaultValue() {
+        return defaultValue;
+    }
+
+    public void setDefaultValue(String defaultValue) {
+        this.defaultValue = defaultValue;
+    }
+
+    public String toUMLString() {
+        String type = dataType == null ? "Object" : dataType;
+        return (attributeName == null ? "field" : attributeName) + ": " + type;
     }
 }

@@ -2,18 +2,21 @@ package com.umlytics.domain;
 
 import com.umlytics.enums.SourceType;
 import com.umlytics.enums.RelationshipType;
+import com.umlytics.enums.RenderState;
 
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.List;
+import java.time.LocalDateTime;
+import java.util.UUID;
 
 public class UMLDiagram {
-    private int diagramId;
-    private int projectId;
+    private UUID diagramId;
+    private UUID projectId;
     private String title;
-    private Date createdDate;
-    private Date lastModifiedDate;
+    private LocalDateTime createdDate;
+    private LocalDateTime lastModifiedDate;
     private SourceType sourceType;
+    private RenderState renderState = RenderState.PENDING;
     private String defaultClassHeaderColor = "Blue";
     private String defaultClassBorderColor = "Blue";
     private double defaultClassFontSize = 12.0;
@@ -22,7 +25,7 @@ public class UMLDiagram {
     private String defaultEdgeColor = "Black";
     private boolean defaultEdgeDashed;
     private RelationshipType defaultRelationshipType = RelationshipType.ASSOCIATION;
-    private final List<UMLClass> classes = new ArrayList<>();
+    private final List<ConceptualClass> classes = new ArrayList<>();
     private final List<Relationship> relationships = new ArrayList<>();
 
     public void render() {
@@ -36,8 +39,8 @@ public class UMLDiagram {
     public String serialize() {
         StringBuilder builder = new StringBuilder();
         builder.append("{");
-        builder.append("\"diagramId\":").append(diagramId).append(",");
-        builder.append("\"projectId\":").append(projectId).append(",");
+        builder.append("\"diagramId\":\"").append(diagramId == null ? "" : diagramId).append("\",");
+        builder.append("\"projectId\":\"").append(projectId == null ? "" : projectId).append("\",");
         builder.append("\"title\":\"").append(title == null ? "" : escapeJson(title)).append("\",");
         builder.append("\"sourceType\":\"").append(sourceType == null ? "" : sourceType.name()).append("\",");
         builder.append("\"defaults\":{")
@@ -52,7 +55,7 @@ public class UMLDiagram {
                 .append("},");
         builder.append("\"classes\":[");
         for (int i = 0; i < classes.size(); i++) {
-            UMLClass c = classes.get(i);
+            ConceptualClass c = classes.get(i);
             builder.append("{")
                     .append("\"name\":\"").append(escapeJson(c.getName())).append("\",")
                     .append("\"x\":").append(c.getPositionX()).append(",")
@@ -91,27 +94,35 @@ public class UMLDiagram {
         return builder.toString();
     }
 
-    public void addUMLClass(UMLClass c) {
+    public void addConceptualClass(ConceptualClass c) {
         classes.add(c);
-        this.lastModifiedDate = new Date();
+        this.lastModifiedDate = LocalDateTime.now();
     }
 
-    public void removeUMLClass(int id) {
-        classes.removeIf(c -> c.getClassId() == id);
-        this.lastModifiedDate = new Date();
+    public void addUMLClass(ConceptualClass c) {
+        addConceptualClass(c);
+    }
+
+    public void removeConceptualClass(UUID id) {
+        classes.removeIf(c -> id.equals(c.getClassId()));
+        this.lastModifiedDate = LocalDateTime.now();
+    }
+
+    public void removeUMLClass(UUID id) {
+        removeConceptualClass(id);
     }
 
     public void addRelationship(Relationship r) {
         relationships.add(r);
-        this.lastModifiedDate = new Date();
+        this.lastModifiedDate = LocalDateTime.now();
     }
 
-    public void removeRelationship(int id) {
-        relationships.removeIf(r -> r.getRelationshipId() == id);
-        this.lastModifiedDate = new Date();
+    public void removeRelationship(UUID id) {
+        relationships.removeIf(r -> id.equals(r.getRelationshipId()));
+        this.lastModifiedDate = LocalDateTime.now();
     }
 
-    public List<UMLClass> getClasses() {
+    public List<ConceptualClass> getClasses() {
         return classes;
     }
 
@@ -119,19 +130,19 @@ public class UMLDiagram {
         return relationships;
     }
 
-    public int getDiagramId() {
+    public UUID getDiagramId() {
         return diagramId;
     }
 
-    public void setDiagramId(int diagramId) {
+    public void setDiagramId(UUID diagramId) {
         this.diagramId = diagramId;
     }
 
-    public int getProjectId() {
+    public UUID getProjectId() {
         return projectId;
     }
 
-    public void setProjectId(int projectId) {
+    public void setProjectId(UUID projectId) {
         this.projectId = projectId;
     }
 
@@ -143,19 +154,19 @@ public class UMLDiagram {
         this.title = title;
     }
 
-    public Date getCreatedDate() {
+    public LocalDateTime getCreatedDate() {
         return createdDate;
     }
 
-    public void setCreatedDate(Date createdDate) {
+    public void setCreatedDate(LocalDateTime createdDate) {
         this.createdDate = createdDate;
     }
 
-    public Date getLastModifiedDate() {
+    public LocalDateTime getLastModifiedDate() {
         return lastModifiedDate;
     }
 
-    public void setLastModifiedDate(Date lastModifiedDate) {
+    public void setLastModifiedDate(LocalDateTime lastModifiedDate) {
         this.lastModifiedDate = lastModifiedDate;
     }
 
@@ -165,6 +176,14 @@ public class UMLDiagram {
 
     public void setSourceType(SourceType sourceType) {
         this.sourceType = sourceType;
+    }
+
+    public RenderState getRenderState() {
+        return renderState;
+    }
+
+    public void setRenderState(RenderState renderState) {
+        this.renderState = renderState;
     }
 
     public String getDefaultClassHeaderColor() {

@@ -1,8 +1,8 @@
 package com.umlytics.enums;
 
 public enum SourceType {
-    NL,
-    CODE,
-    UPLOAD,
-    MANUAL
+    NATURAL_LANGUAGE,
+    SOURCE_CODE,
+    MANUAL,
+    UPLOADED_IMAGE
 }

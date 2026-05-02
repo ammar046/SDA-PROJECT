@@ -1,11 +1,12 @@
 package com.umlytics.domain;
 
 import com.umlytics.enums.RelationshipType;
+import java.util.UUID;
 
 public abstract class Relationship {
-    private int relationshipId;
-    private UMLClass sourceClass;
-    private UMLClass targetClass;
+    private UUID relationshipId;
+    private ConceptualClass sourceClass;
+    private ConceptualClass targetClass;
     private String sourceMultiplicity;
     private String targetMultiplicity;
     private String label;
@@ -15,11 +16,11 @@ public abstract class Relationship {
 
     public abstract RelationshipType getType();
 
-    public UMLClass getSource() {
+    public ConceptualClass getSource() {
         return sourceClass;
     }
 
-    public UMLClass getTarget() {
+    public ConceptualClass getTarget() {
         return targetClass;
     }
 
@@ -32,22 +33,26 @@ public abstract class Relationship {
     }
 
     public boolean validate() {
-        return sourceClass != null && targetClass != null && sourceClass != targetClass;
+        return sourceClass != null
+                && targetClass != null
+                && sourceClass.getClassId() != null
+                && targetClass.getClassId() != null
+                && !sourceClass.getClassId().equals(targetClass.getClassId());
     }
 
-    public int getRelationshipId() {
+    public UUID getRelationshipId() {
         return relationshipId;
     }
 
-    public void setRelationshipId(int relationshipId) {
+    public void setRelationshipId(UUID relationshipId) {
         this.relationshipId = relationshipId;
     }
 
-    public void setSourceClass(UMLClass sourceClass) {
+    public void setSourceClass(ConceptualClass sourceClass) {
         this.sourceClass = sourceClass;
     }
 
-    public void setTargetClass(UMLClass targetClass) {
+    public void setTargetClass(ConceptualClass targetClass) {
         this.targetClass = targetClass;
     }
 

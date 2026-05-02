@@ -2,50 +2,49 @@ package com.umlytics.domain;
 
 import com.umlytics.enums.Visibility;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.util.UUID;
 
 public class Method {
-    private int methodId;
-    private String name;
+    private UUID methodId;
+    private String methodName;
     private String returnType;
-    private List<String> parameters = new ArrayList<>();
+    private String parameters;
     private Visibility visibility;
     private boolean isAbstract;
 
     public String getSignature() {
-        return name + "(" + String.join(", ", parameters) + "): " + returnType;
+        return methodName + "(" + (parameters != null ? parameters : "") + "): " + returnType;
     }
 
     public String getName() {
-        return name;
+        return methodName;
     }
 
     public String getReturnType() {
         return returnType;
     }
 
-    public int getMethodId() {
+    public UUID getMethodId() {
         return methodId;
     }
 
-    public void setMethodId(int methodId) {
+    public void setMethodId(UUID methodId) {
         this.methodId = methodId;
     }
 
     public void setName(String name) {
-        this.name = name;
+        this.methodName = name;
     }
 
     public void setReturnType(String returnType) {
         this.returnType = returnType;
     }
 
-    public List<String> getParameters() {
+    public String getParameters() {
         return parameters;
     }
 
-    public void setParameters(List<String> parameters) {
+    public void setParameters(String parameters) {
         this.parameters = parameters;
     }
 
@@ -63,5 +62,13 @@ public class Method {
 
     public void setAbstract(boolean anAbstract) {
         isAbstract = anAbstract;
+    }
+
+    public String getMethodName() {
+        return methodName;
+    }
+
+    public void setMethodName(String methodName) {
+        this.methodName = methodName;
     }
 }

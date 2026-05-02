@@ -6,6 +6,7 @@ import com.umlytics.interfaces.IDiagramRepository;
 import com.umlytics.interfaces.IProjectRepository;
 
 import java.util.List;
+import java.util.UUID;
 
 // GRASP: Controller (Use Case)
 public class ProjectController {
@@ -32,17 +33,21 @@ public class ProjectController {
         return project;
     }
 
-    public Project retrieveProject(int id) {
-        Project project = projectRepo.findById(id);
+    public Project openProject(UUID projectId) {
+        Project project = projectRepo.findById(projectId);
         if (project == null) {
             return null;
         }
         project.getDiagrams().clear();
-        project.getDiagrams().addAll(diagramRepo.findByProject(id));
+        project.getDiagrams().addAll(diagramRepo.findByProject(projectId));
         return project;
     }
 
-    public void maintainProject(int id, String name, String desc) {
+    public Project openProject(int projectId) {
+        return openProject(UUID.nameUUIDFromBytes(("legacy-project-" + projectId).getBytes()));
+    }
+
+    public void updateProjectMetadata(UUID id, String name, String desc) {
         Project project = projectRepo.findById(id);
         if (project == null) {
             throw new ValidationException("Project not found.");
@@ -51,7 +56,7 @@ public class ProjectController {
             throw new ValidationException("Project name cannot be empty.");
         }
         boolean duplicate = projectRepo.findAll().stream()
-                .anyMatch(p -> p.getProjectId() != id && p.getName() != null && p.getName().equalsIgnoreCase(name));
+                .anyMatch(p -> !id.equals(p.getProjectId()) && p.getName() != null && p.getName().equalsIgnoreCase(name));
         if (duplicate) {
             throw new ValidationException("Project name already exists.");
         }
@@ -59,11 +64,19 @@ public class ProjectController {
         projectRepo.update(project);
     }
 
-    public void deleteProject(int id) {
+    public void updateProjectMetadata(int id, String name, String desc) {
+        updateProjectMetadata(UUID.nameUUIDFromBytes(("legacy-project-" + id).getBytes()), name, desc);
+    }
+
+    public void deleteProject(UUID id) {
         projectRepo.delete(id);
     }
 
-    public List<Project> listAllProjects() {
+    public void deleteProject(int id) {
+        deleteProject(UUID.nameUUIDFromBytes(("legacy-project-" + id).getBytes()));
+    }
+
+    public List<Project> getAllProjects() {
         return projectRepo.findAll();
     }
 }

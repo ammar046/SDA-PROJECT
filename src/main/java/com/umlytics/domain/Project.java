@@ -1,31 +1,35 @@
 package com.umlytics.domain;
 
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.List;
+import java.time.LocalDateTime;
+import java.util.UUID;
 
 public class Project {
-    private int projectId;
+    private UUID projectId;
     private String name;
     private String description;
-    private Date createdDate;
-    private Date lastModifiedDate;
+    private LocalDateTime createdDate;
+    private LocalDateTime lastModifiedDate;
     private final List<UMLDiagram> diagrams = new ArrayList<>();
     private final List<ChatMessage> chatHistory = new ArrayList<>();
-    private final List<EvaluationReport> evaluationHistory = new ArrayList<>();
+    private final List<DesignEvaluationReport> evaluationHistory = new ArrayList<>();
 
     public void createProject(String name, String desc) {
         this.name = name;
         this.description = desc;
-        Date now = new Date();
+        LocalDateTime now = LocalDateTime.now();
         this.createdDate = now;
         this.lastModifiedDate = now;
+        if (this.projectId == null) {
+            this.projectId = UUID.randomUUID();
+        }
     }
 
     public void updateProject(String name, String desc) {
         this.name = name;
         this.description = desc;
-        this.lastModifiedDate = new Date();
+        this.lastModifiedDate = LocalDateTime.now();
     }
 
     public List<UMLDiagram> getDiagrams() {
@@ -36,25 +40,25 @@ public class Project {
         return chatHistory;
     }
 
-    public List<EvaluationReport> getEvaluationHistory() {
+    public List<DesignEvaluationReport> getEvaluationHistory() {
         return evaluationHistory;
     }
 
     public void addDiagram(UMLDiagram d) {
         diagrams.add(d);
-        this.lastModifiedDate = new Date();
+        this.lastModifiedDate = LocalDateTime.now();
     }
 
-    public void removeDiagram(int id) {
-        diagrams.removeIf(d -> d.getDiagramId() == id);
-        this.lastModifiedDate = new Date();
+    public void removeDiagram(UUID id) {
+        diagrams.removeIf(d -> id.equals(d.getDiagramId()));
+        this.lastModifiedDate = LocalDateTime.now();
     }
 
-    public int getProjectId() {
+    public UUID getProjectId() {
         return projectId;
     }
 
-    public void setProjectId(int projectId) {
+    public void setProjectId(UUID projectId) {
         this.projectId = projectId;
     }
 
@@ -74,19 +78,19 @@ public class Project {
         this.description = description;
     }
 
-    public Date getCreatedDate() {
+    public LocalDateTime getCreatedDate() {
         return createdDate;
     }
 
-    public void setCreatedDate(Date createdDate) {
+    public void setCreatedDate(LocalDateTime createdDate) {
         this.createdDate = createdDate;
     }
 
-    public Date getLastModifiedDate() {
+    public LocalDateTime getLastModifiedDate() {
         return lastModifiedDate;
     }
 
-    public void setLastModifiedDate(Date lastModifiedDate) {
+    public void setLastModifiedDate(LocalDateTime lastModifiedDate) {
         this.lastModifiedDate = lastModifiedDate;
     }
 }

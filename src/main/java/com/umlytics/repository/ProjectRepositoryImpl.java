@@ -8,11 +8,10 @@ import com.umlytics.interfaces.IProjectRepository;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
-import java.sql.Statement;
-import java.time.Instant;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.List;
+import java.util.UUID;
 
 // GRASP: Pure Fabrication, Low Coupling
 public class ProjectRepositoryImpl implements IProjectRepository {
@@ -21,27 +20,20 @@ public class ProjectRepositoryImpl implements IProjectRepository {
 
     @Override
     public void save(Project p) {
-        String sql = "INSERT INTO projects(name, description, created_date, last_modified_date) VALUES (?, ?, ?, ?)";
-        Date now = new Date();
-        if (p.getCreatedDate() == null) {
-            p.setCreatedDate(now);
-        }
-        if (p.getLastModifiedDate() == null) {
-            p.setLastModifiedDate(now);
-        }
+        String sql = "INSERT INTO project(project_id, name, description, created_date, last_modified) VALUES (?, ?, ?, ?, ?)";
+        LocalDateTime now = LocalDateTime.now();
+        if (p.getProjectId() == null) p.setProjectId(UUID.randomUUID());
+        if (p.getCreatedDate() == null) p.setCreatedDate(now);
+        if (p.getLastModifiedDate() == null) p.setLastModifiedDate(now);
         try (Connection conn = DatabaseManager.getInstance().getConnection()) {
             conn.setAutoCommit(false);
-            try (PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
-                ps.setString(1, p.getName());
-                ps.setString(2, p.getDescription());
-                ps.setString(3, p.getCreatedDate().toInstant().toString());
-                ps.setString(4, p.getLastModifiedDate().toInstant().toString());
+            try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                ps.setString(1, p.getProjectId().toString());
+                ps.setString(2, p.getName());
+                ps.setString(3, p.getDescription());
+                ps.setString(4, p.getCreatedDate().toString());
+                ps.setString(5, p.getLastModifiedDate().toString());
                 ps.executeUpdate();
-                try (ResultSet rs = ps.getGeneratedKeys()) {
-                    if (rs.next()) {
-                        p.setProjectId(rs.getInt(1));
-                    }
-                }
                 conn.commit();
             } catch (Exception inner) {
                 conn.rollback();
@@ -53,11 +45,11 @@ public class ProjectRepositoryImpl implements IProjectRepository {
     }
 
     @Override
-    public Project findById(int id) {
-        String sql = "SELECT * FROM projects WHERE project_id = ?";
+    public Project findById(UUID id) {
+        String sql = "SELECT * FROM project WHERE project_id = ?";
         try (Connection conn = DatabaseManager.getInstance().getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setInt(1, id);
+            ps.setString(1, id.toString());
             try (ResultSet rs = ps.executeQuery()) {
                 if (!rs.next()) {
                     return null;
@@ -71,7 +63,7 @@ public class ProjectRepositoryImpl implements IProjectRepository {
 
     @Override
     public List<Project> findAll() {
-        String sql = "SELECT * FROM projects ORDER BY last_modified_date DESC";
+        String sql = "SELECT * FROM project ORDER BY last_modified DESC";
         List<Project> projects = new ArrayList<>();
         try (Connection conn = DatabaseManager.getInstance().getConnection();
              PreparedStatement ps = conn.prepareStatement(sql);
@@ -86,12 +78,12 @@ public class ProjectRepositoryImpl implements IProjectRepository {
     }
 
     @Override
-    public void delete(int id) {
-        String sql = "DELETE FROM projects WHERE project_id = ?";
+    public void delete(UUID id) {
+        String sql = "DELETE FROM project WHERE project_id = ?";
         try (Connection conn = DatabaseManager.getInstance().getConnection()) {
             conn.setAutoCommit(false);
             try (PreparedStatement ps = conn.prepareStatement(sql)) {
-                ps.setInt(1, id);
+                ps.setString(1, id.toString());
                 ps.executeUpdate();
                 conn.commit();
             } catch (Exception inner) {
@@ -105,14 +97,14 @@ public class ProjectRepositoryImpl implements IProjectRepository {
 
     @Override
     public void update(Project p) {
-        String sql = "UPDATE projects SET name = ?, description = ?, last_modified_date = ? WHERE project_id = ?";
+        String sql = "UPDATE project SET name = ?, description = ?, last_modified = ? WHERE project_id = ?";
         try (Connection conn = DatabaseManager.getInstance().getConnection()) {
             conn.setAutoCommit(false);
             try (PreparedStatement ps = conn.prepareStatement(sql)) {
                 ps.setString(1, p.getName());
                 ps.setString(2, p.getDescription());
-                ps.setString(3, Instant.now().toString());
-                ps.setInt(4, p.getProjectId());
+                ps.setString(3, LocalDateTime.now().toString());
+                ps.setString(4, p.getProjectId().toString());
                 ps.executeUpdate();
                 conn.commit();
             } catch (Exception inner) {
@@ -126,11 +118,11 @@ public class ProjectRepositoryImpl implements IProjectRepository {
 
     private Project mapProject(ResultSet rs) throws Exception {
         Project project = new Project();
-        project.setProjectId(rs.getInt("project_id"));
+        project.setProjectId(UUID.fromString(rs.getString("project_id")));
         project.setName(rs.getString("name"));
         project.setDescription(rs.getString("description"));
-        project.setCreatedDate(Date.from(Instant.parse(rs.getString("created_date"))));
-        project.setLastModifiedDate(Date.from(Instant.parse(rs.getString("last_modified_date"))));
+        project.setCreatedDate(LocalDateTime.parse(rs.getString("created_date")));
+        project.setLastModifiedDate(LocalDateTime.parse(rs.getString("last_modified")));
         return project;
     }
 }

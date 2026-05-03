@@ -1,0 +1,39 @@
+[INFO] Scanning for projects...
+[INFO] 
+[INFO] -----------------------< com.umlytics:umlytics >------------------------
+[INFO] Building UMLytics 0.1.0-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[WARNING] 6 problems were encountered while building the effective model for org.openjfx:javafx-controls:jar:21 during dependency collection step for project (use -X to see details)
+[INFO] 
+[INFO] --- clean:3.2.0:clean (default-clean) @ umlytics ---
+[INFO] Deleting C:\Users\PC\Desktop\Project SDA\target
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ umlytics ---
+[INFO] Copying 4 resources from src\main\resources to target\classes
+[INFO] 
+[INFO] --- compiler:3.13.0:compile (default-compile) @ umlytics ---
+[INFO] Recompiling the module because of changed source code.
+[INFO] Compiling 85 source files with javac [debug target 17] to target\classes
+[INFO] -------------------------------------------------------------
+[ERROR] COMPILATION ERROR : 
+[INFO] -------------------------------------------------------------
+[ERROR] /C:/Users/PC/Desktop/Project SDA/src/main/java/com/umlytics/ui/DiagramEditorPanel.java:[386,39] variable t is already defined in method addVisualRelationship(com.umlytics.domain.ConceptualClass,com.umlytics.domain.ConceptualClass,com.umlytics.enums.RelationshipType,com.umlytics.domain.Relationship)
+[INFO] 1 error
+[INFO] -------------------------------------------------------------
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD FAILURE
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  2.878 s
+[INFO] Finished at: 2026-05-03T14:10:14+05:00
+[INFO] ------------------------------------------------------------------------
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-compiler-plugin:3.13.0:compile (default-compile) on project umlytics: Compilation failure
+[ERROR] /C:/Users/PC/Desktop/Project SDA/src/main/java/com/umlytics/ui/DiagramEditorPanel.java:[386,39] variable t is already defined in method addVisualRelationship(com.umlytics.domain.ConceptualClass,com.umlytics.domain.ConceptualClass,com.umlytics.enums.RelationshipType,com.umlytics.domain.Relationship)
+[ERROR] 
+[ERROR] -> [Help 1]
+[ERROR] 
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR] 
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoFailureException

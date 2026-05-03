@@ -1,0 +1,14 @@
+package com.umlytics.enums;
+
+public enum EditType {
+    ADD_CLASS,
+    REMOVE_CLASS,
+    RENAME_CLASS,
+    ADD_ATTRIBUTE,
+    REMOVE_ATTRIBUTE,
+    ADD_METHOD,
+    REMOVE_METHOD,
+    ADD_RELATIONSHIP,
+    REMOVE_RELATIONSHIP,
+    MOVE_CLASS
+}

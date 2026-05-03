@@ -1,0 +1,17 @@
+package com.umlytics.interfaces;
+
+import com.umlytics.domain.DesignEvaluationReport;
+import com.umlytics.domain.ProjectContext;
+import com.umlytics.domain.UMLModel;
+
+public interface IAIEngine {
+    UMLModel generateFromText(String desc);
+
+    DesignEvaluationReport evaluateDesign(UMLModel m);
+
+    String consultDesign(String q, ProjectContext ctx);
+
+    String generateStructure(UMLModel m);
+
+    UMLModel analyzeImage(byte[] data);
+}

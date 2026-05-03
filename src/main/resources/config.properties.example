@@ -1,0 +1,29 @@
+# Copy to config.properties (not tracked in git) and fill in your keys.
+db.url=jdbc:sqlite:umlytics.db
+db.username=
+db.password=
+
+ai.api.key=YOUR_API_KEY_HERE
+ai.api.endpoint=https://api.cerebras.ai/v1/chat/completions
+# Use a model enabled for your key (Cerebras console). If you see model_not_found, try llama3.1-8b, gpt-oss-120b, or another listed in inference-docs.cerebras.ai. Image analysis needs a vision endpoint (e.g. OpenAI gpt-4o), not Cerebras text models.
+ai.api.model=llama3.1-8b
+
+# Optional: reproducible design-evaluation scores (OpenAI-compatible). Evaluation uses temperature 0; set a fixed seed if your API supports it.
+# ai.eval.seed=42
+
+# Optional: vision-only API (e.g. OpenAI) if your main provider (Cerebras) is text-only — enables "Analyse Image".
+# ai.vision.endpoint=https://api.openai.com/v1/chat/completions
+# ai.vision.api.key=sk-...
+# ai.vision.model=gpt-4o-mini
+
+# You can also use ./config.properties in the project root (next to pom.xml) for local secrets; it is loaded at runtime.
+
+stt.provider=whisper
+stt.api.key=YOUR_STT_KEY_HERE
+stt.api.endpoint=https://api.openai.com/v1/audio/transcriptions
+
+export.default.path=./exports
+
+ui.theme=light
+ui.canvas.grid.size=10
+ui.canvas.default.zoom=1.0

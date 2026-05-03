@@ -1,9 +1,44 @@
 package com.umlytics.domain;
 
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+
 import java.util.Map;
 import java.util.UUID;
 
 public class ClassSuggestion {
+    /**
+     * Turns AI JSON {@code {"skeletons":{"ClassName":"java source..."}}} into plain Java text for copy-paste.
+     * If the response is not that shape, returns the trimmed string unchanged.
+     */
+    public static String combineSkeletonResponse(String response) {
+        if (response == null) {
+            return "";
+        }
+        String trimmed = response.trim();
+        if (trimmed.isEmpty() || !trimmed.startsWith("{")) {
+            return trimmed;
+        }
+        try {
+            JsonObject parsed = JsonParser.parseString(trimmed).getAsJsonObject();
+            if (parsed.has("skeletons")) {
+                JsonObject skeletons = parsed.getAsJsonObject("skeletons");
+                StringBuilder combined = new StringBuilder();
+                for (String key : skeletons.keySet()) {
+                    if (!skeletons.get(key).isJsonPrimitive()) {
+                        continue;
+                    }
+                    combined.append("// === ").append(key).append(" ===\n");
+                    combined.append(skeletons.get(key).getAsString()).append("\n\n");
+                }
+                return combined.toString().trim();
+            }
+        } catch (Exception ignored) {
+            // fall through
+        }
+        return trimmed;
+    }
+
     private UUID suggestionId;
     private UUID classId;
     private UUID diagramId;

@@ -19,6 +19,7 @@ C:\Users\PC\Desktop\Project SDA\src\main\java\com\umlytics\domain\ProjectContext
 C:\Users\PC\Desktop\Project SDA\src\main\java\com\umlytics\domain\Relationship.java
 C:\Users\PC\Desktop\Project SDA\src\main\java\com\umlytics\domain\SoftwareDesigner.java
 C:\Users\PC\Desktop\Project SDA\src\main\java\com\umlytics\domain\SourceFile.java
+C:\Users\PC\Desktop\Project SDA\src\main\java\com\umlytics\domain\UMLClass.java
 C:\Users\PC\Desktop\Project SDA\src\main\java\com\umlytics\domain\UMLDiagram.java
 C:\Users\PC\Desktop\Project SDA\src\main\java\com\umlytics\domain\UMLModel.java
 C:\Users\PC\Desktop\Project SDA\src\main\java\com\umlytics\domain\VoiceInput.java
@@ -77,4 +78,8 @@ C:\Users\PC\Desktop\Project SDA\src\main\java\com\umlytics\ui\DiagramEditorPanel
 C:\Users\PC\Desktop\Project SDA\src\main\java\com\umlytics\ui\EvaluationPanel.java
 C:\Users\PC\Desktop\Project SDA\src\main\java\com\umlytics\ui\JavaSyntaxHighlighter.java
 C:\Users\PC\Desktop\Project SDA\src\main\java\com\umlytics\ui\MainWindow.java
+C:\Users\PC\Desktop\Project SDA\src\main\java\com\umlytics\ui\panels\AIChatPanel.java
+C:\Users\PC\Desktop\Project SDA\src\main\java\com\umlytics\ui\panels\ProjectExplorerPanel.java
+C:\Users\PC\Desktop\Project SDA\src\main\java\com\umlytics\ui\panels\ShapePalettePanel.java
+C:\Users\PC\Desktop\Project SDA\src\main\java\com\umlytics\ui\panels\ToolbarPanel.java
 C:\Users\PC\Desktop\Project SDA\src\main\java\com\umlytics\ui\ProjectDashboardPanel.java

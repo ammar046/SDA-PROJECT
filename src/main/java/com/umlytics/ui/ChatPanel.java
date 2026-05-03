@@ -25,6 +25,8 @@ public class ChatPanel extends VBox {
     private ListView<ChatMessage> chatDisplay;
     private Label recordingIndicator;
     private FadeTransition recordingPulse;
+    private Button voiceButton;
+    private boolean isRecording = false;
     private int activeProjectId = 1;
 
     public ChatPanel() {
@@ -41,7 +43,7 @@ public class ChatPanel extends VBox {
             }
         });
 
-        Button voiceButton = new Button("Mic");
+        voiceButton = new Button("🎙");
         voiceButton.setOnAction(event -> onVoiceInput());
         Button sendButton = new Button("Send");
         sendButton.setOnAction(event -> onSendMessage());
@@ -74,25 +76,63 @@ public class ChatPanel extends VBox {
 
     public void onVoiceInput() {
         if (speechSvc == null) {
-            new Alert(Alert.AlertType.WARNING, "Speech service is not configured.").show();
+            MainWindow.showToast("Speech service not available.");
             return;
         }
         if (!speechSvc.isAvailable()) {
-            new Alert(Alert.AlertType.WARNING, "Microphone is not available.").show();
+            MainWindow.showToast("No microphone detected.");
             return;
         }
-        try {
+        if (!isRecording) {
+            isRecording = true;
+            voiceButton.setText("⏹ Stop");
+            voiceButton.setStyle("-fx-background-color: #e53935; -fx-text-fill: white;");
             recordingIndicator.setVisible(true);
             recordingPulse.playFromStart();
-            speechSvc.startRecording();
-            String text = speechSvc.stopRecording();
-            inputField.setText(text);
-        } catch (Exception e) {
-            new Alert(Alert.AlertType.ERROR, e.getMessage()).show();
-        } finally {
+            new Thread(() -> {
+                try {
+                    speechSvc.startRecording();
+                } catch (Exception ex) {
+                    javafx.application.Platform.runLater(() -> {
+                        isRecording = false;
+                        voiceButton.setText("🎙");
+                        voiceButton.setStyle("");
+                        recordingPulse.stop();
+                        recordingIndicator.setVisible(false);
+                        MainWindow.showToast("Microphone error: " + ex.getMessage());
+                    });
+                }
+            }, "stt-record-thread").start();
+        } else {
+            isRecording = false;
+            voiceButton.setText("⏳");
+            voiceButton.setDisable(true);
             recordingPulse.stop();
-            recordingIndicator.setOpacity(1.0);
             recordingIndicator.setVisible(false);
+            new Thread(() -> {
+                try {
+                    String text = speechSvc.stopRecording();
+                    javafx.application.Platform.runLater(() -> {
+                        voiceButton.setText("🎙");
+                        voiceButton.setStyle("");
+                        voiceButton.setDisable(false);
+                        if (text != null && !text.isBlank()) {
+                            inputField.setText(text);
+                            inputField.requestFocus();
+                            inputField.positionCaret(text.length());
+                        } else {
+                            MainWindow.showToast("No speech detected.");
+                        }
+                    });
+                } catch (Exception ex) {
+                    javafx.application.Platform.runLater(() -> {
+                        voiceButton.setText("🎙");
+                        voiceButton.setStyle("");
+                        voiceButton.setDisable(false);
+                        MainWindow.showToast("Transcription failed: " + ex.getMessage());
+                    });
+                }
+            }, "stt-transcribe-thread").start();
         }
     }
 

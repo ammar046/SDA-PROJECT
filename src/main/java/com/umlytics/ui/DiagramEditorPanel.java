@@ -59,6 +59,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+// GRASP: Creator, Information Expert
+// GoF:   Mediator (coordinates ClassNode, RelationshipEdge, DiagramCanvas)
 public class DiagramEditorPanel extends BorderPane {
     private final DiagramCanvas canvas;
     private final DiagramController diagramCtrl;
@@ -89,8 +91,12 @@ public class DiagramEditorPanel extends BorderPane {
     private boolean formatPanelVisible = true;
     private int pageCounter = 1;
     private int tempClassId = -1;
+    /** When the current diagram has no project, saves and generators use this project. */
+    private java.util.UUID defaultProjectIdForNewDiagrams;
     private double selectionStartX;
     private double selectionStartY;
+    private VBox placeholderBox;
+    private javafx.scene.transform.Scale canvasScaleTransform;
 
     public DiagramEditorPanel() {
         this(null);
@@ -102,10 +108,14 @@ public class DiagramEditorPanel extends BorderPane {
         this.toolBar = new EditToolBar();
         this.currentDiagram = new UMLDiagram();
         this.canvasLayer = new Pane();
+        // GoF: apply Scale transform so ClassNode children scale with zoom
+        javafx.scene.transform.Scale canvasScale = new javafx.scene.transform.Scale(1.0, 1.0, 0, 0);
+        this.canvasLayer.getTransforms().add(canvasScale);
+        this.canvasScaleTransform = canvasScale;
         this.rightFormatPanel = new VBox(8);
         this.statusZoomLabel = new Label("zoom: 100%");
         this.statusCursorLabel = new Label("cursor: 0,0");
-        this.statusHintLabel = new Label("ready");
+        this.statusHintLabel = new Label("Shift+drag between classes to connect  |  Ctrl+Z undo  |  Del delete");
         this.miniViewport = new Rectangle(24, 18, Color.TRANSPARENT);
         miniViewport.setStroke(Color.web("#0066ff"));
         this.selectionBox = new Rectangle();
@@ -126,24 +136,24 @@ public class DiagramEditorPanel extends BorderPane {
         canvasLayer.getChildren().add(selectionBox);
         canvasLayer.setPrefSize(1600, 1000);
         canvasLayer.getStyleClass().add("diagram-canvas-container");
+        canvasLayer.getStyleClass().add("diagram-canvas-pane");
         canvasLayer.setOnMouseClicked(event -> requestFocus());
 
-        VBox leftShapePanel = buildLeftShapePanel();
-        leftShapePanel.getStyleClass().add("shape-panel");
-        rightFormatPanel.getChildren().add(new TitledPane("Style", new VBox(new Label("Select an element to edit styles."))));
-        rightFormatPanel.getStyleClass().add("format-panel");
-
-        SplitPane splitPane = new SplitPane(leftShapePanel, buildCanvasCenter(), rightFormatPanel);
-        this.diagramSplitPane = splitPane;
-        splitPane.setDividerPositions(0.16, 0.82);
-
-        setTop(toolBar);
-        setCenter(splitPane);
+        // DiagramEditorPanel is now ONLY the canvas area.
+        // The outer MainWindow manages the shape palette, explorer, and chat panels.
+        StackPane canvasStack = buildCanvasCenter();
+        canvasStack.getStyleClass().add("diagram-canvas-pane");
+        setCenter(canvasStack);
         setBottom(buildBottomBar());
+        setupPaletteDrop(canvasLayer);
         wireToolbarActions();
         wireCanvasStatusUpdates();
         wireKeyboardShortcuts();
         wireSelectionBox();
+    }
+
+    public void setDefaultProjectIdForNewDiagrams(java.util.UUID projectId) {
+        this.defaultProjectIdForNewDiagrams = projectId;
     }
 
     public void onAddClass() {
@@ -175,9 +185,8 @@ public class DiagramEditorPanel extends BorderPane {
     }
 
     public void onSaveDiagram() {
-        if (diagramCtrl != null) {
-            diagramCtrl.saveDiagram(currentDiagram);
-        }
+        saveCurrentDiagram();
+        MainWindow.notifyDiagramChanged();
     }
 
     public void onExport() {
@@ -214,13 +223,18 @@ public class DiagramEditorPanel extends BorderPane {
         }
         canvas.redraw();
         refreshMiniMap();
+        
+        if (placeholderBox != null) {
+            boolean empty = d == null || d.getClasses().isEmpty();
+            placeholderBox.setVisible(empty);
+        }
     }
 
     private void wireToolbarActions() {
         toolBar.getClassButton().setOnAction(event -> onAddClass());
         toolBar.getRelationshipButton().setOnAction(event -> onAddRelationship());
         toolBar.getUndoButton().setOnAction(event -> undo());
-        toolBar.getRedoButton().setOnAction(event -> redo());
+        toolBar.getRedoButton().setOnAction(event -> redo_internal());
         toolBar.getSelectButton().setOnAction(event -> {
             toolMode = ToolMode.SELECT;
             pendingRelationshipSource = null;
@@ -371,6 +385,34 @@ public class DiagramEditorPanel extends BorderPane {
             activeEdgeSelection = edge;
             edge.setSelected(true);
             showEdgeFormatControls(edge);
+            if (event.getButton() == javafx.scene.input.MouseButton.SECONDARY) {
+                javafx.scene.control.ContextMenu contextMenu = new javafx.scene.control.ContextMenu();
+                javafx.scene.control.Menu typeMenu = new javafx.scene.control.Menu("Change Type");
+                for (RelationshipType relType : RelationshipType.values()) {
+                    javafx.scene.control.MenuItem item = new javafx.scene.control.MenuItem(relType.name());
+                    item.setOnAction(e -> {
+                        boolean isDashed = (relType == RelationshipType.DEPENDENCY || relType == RelationshipType.REALIZATION);
+                        applyEdgeState(edge, relType, relType.name(), edge.getSourceMultiplicity() == null ? "1" : edge.getSourceMultiplicity(),
+                                edge.getTargetMultiplicity() == null ? "*" : edge.getTargetMultiplicity(),
+                                isDashed, colorNameFromColor(edge.getStrokeColor()), edge.getBendX());
+                        showEdgeFormatControls(edge);
+                    });
+                    typeMenu.getItems().add(item);
+                }
+                javafx.scene.control.Menu cardMenu = new javafx.scene.control.Menu("Change Cardinality");
+                String[][] cards = {{"1", "1"}, {"1", "*"}, {"*", "*"}, {"0..1", "1"}, {"0..1", "*"}, {"1..*", "1..*"}};
+                for (String[] c : cards) {
+                    javafx.scene.control.MenuItem item = new javafx.scene.control.MenuItem(c[0] + " to " + c[1]);
+                    item.setOnAction(e -> {
+                        applyEdgeState(edge, edge.getRelationshipType(), edge.getMiddleLabel(), c[0], c[1],
+                                edge.isDashed(), colorNameFromColor(edge.getStrokeColor()), edge.getBendX());
+                        showEdgeFormatControls(edge);
+                    });
+                    cardMenu.getItems().add(item);
+                }
+                contextMenu.getItems().addAll(typeMenu, cardMenu);
+                contextMenu.show(canvasLayer, event.getScreenX(), event.getScreenY());
+            }
         });
         links.put(edge, new RelationshipLink(source, target, type));
         Relationship relationship = existingRelationship == null ? buildRelationship(type, source, target) : existingRelationship;
@@ -408,7 +450,7 @@ public class DiagramEditorPanel extends BorderPane {
         refreshMiniMap();
     }
 
-    private void undo() {
+    private void undo_internal() {
         if (undoStack.isEmpty()) {
             return;
         }
@@ -493,7 +535,7 @@ public class DiagramEditorPanel extends BorderPane {
         }
     }
 
-    private void redo() {
+    private void redo_internal() {
         if (redoStack.isEmpty()) {
             return;
         }
@@ -574,30 +616,73 @@ public class DiagramEditorPanel extends BorderPane {
         }
     }
 
-    private VBox buildLeftShapePanel() {
-        TextField searchField = new TextField();
-        searchField.setPromptText("Search shapes");
-        Button classShape = new Button("Class");
-        classShape.setMaxWidth(Double.MAX_VALUE);
-        classShape.setOnAction(event -> onAddClass());
-        Button interfaceShape = new Button("Interface");
-        interfaceShape.setMaxWidth(Double.MAX_VALUE);
-        interfaceShape.setOnAction(event -> onAddClass());
-        Button noteShape = new Button("Note");
-        noteShape.setMaxWidth(Double.MAX_VALUE);
-        VBox umlBox = new VBox(6, classShape, interfaceShape, noteShape);
-        TitledPane umlPane = new TitledPane("UML", umlBox);
-        umlPane.setCollapsible(false);
-        VBox panel = new VBox(8, searchField, umlPane);
-        panel.setPadding(new Insets(8));
-        return panel;
+    private StackPane buildCanvasCenter() {
+        // Empty-state placeholder
+        VBox placeholder = new VBox(10);
+        placeholder.setAlignment(Pos.CENTER);
+        placeholder.setMouseTransparent(true);
+
+        Label ph1 = new Label("Your canvas is empty");
+        ph1.setStyle("-fx-text-fill: #4a4a5a; -fx-font-size: 16px;");
+
+        Label ph2 = new Label("Drag a shape from the palette, or type a prompt in the AI chat to\ngenerate a diagram automatically.");
+        ph2.setStyle("-fx-text-fill: #3a3a4a; -fx-font-size: 12px; -fx-text-alignment: center;");
+        ph2.setTextAlignment(javafx.scene.text.TextAlignment.CENTER);
+
+        placeholder.getChildren().addAll(ph1, ph2);
+        this.placeholderBox = placeholder; // store reference
+
+        Node miniMap = buildMiniMap();
+        StackPane stack = new StackPane(canvasLayer, placeholder, miniMap);
+        StackPane.setAlignment(miniMap, Pos.BOTTOM_RIGHT);
+        stack.setBackground(new Background(new BackgroundFill(Color.web("#1e1e2a"), CornerRadii.EMPTY, Insets.EMPTY)));
+        return stack;
     }
 
-    private Node buildCanvasCenter() {
-        Node miniMap = buildMiniMap();
-        StackPane stack = new StackPane(canvasLayer, miniMap);
-        StackPane.setAlignment(miniMap, Pos.BOTTOM_RIGHT);
-        return stack;
+    private void setupPaletteDrop(Pane target) {
+        target.setOnDragOver(e -> {
+            if (e.getDragboard().hasString()) e.acceptTransferModes(javafx.scene.input.TransferMode.COPY);
+            e.consume();
+        });
+        target.setOnDragDropped(e -> {
+            String key = e.getDragboard().getString();
+            if (key == null) return;
+            double x = e.getX();
+            double y = e.getY();
+            if (key.startsWith("SHAPE:")) {
+                String type = key.substring(6); // CLASS, ABSTRACT, INTERFACE, ENUM, PACKAGE, NOTE
+                onDropShape(type, x, y);
+            }
+            e.setDropCompleted(true);
+            e.consume();
+        });
+    }
+
+    private void onDropShape(String type, double x, double y) {
+        ConceptualClass cls = new ConceptualClass();
+        cls.setClassId(tempClassId--);
+        cls.setPositionX(x);
+        cls.setPositionY(y);
+        // Set defaults based on type
+        switch (type) {
+            case "CLASS"     -> { cls.setName("NewClass");     cls.setHeaderColor("Blue"); }
+            case "ABSTRACT"  -> { cls.setName("NewAbstract");  cls.setHeaderColor("Purple"); cls.setAbstract(true); }
+            case "INTERFACE" -> { cls.setName("NewInterface"); cls.setHeaderColor("Green");  cls.setInterface(true); }
+            case "ENUM"      -> { cls.setName("NewEnum");      cls.setHeaderColor("Olive"); }
+            case "PACKAGE"   -> { cls.setName("NewPackage");   cls.setHeaderColor("DarkGreen"); }
+            default          -> { cls.setName("Note");         cls.setHeaderColor("Brown"); }
+        }
+        cls.setMemberFontSize(currentDiagram.getDefaultClassFontSize());
+        cls.setClassWidth(currentDiagram.getDefaultClassWidth());
+        cls.setClassHeight(currentDiagram.getDefaultClassHeight());
+        currentDiagram.addConceptualClass(cls);
+        DiagramEdit edit = new DiagramEdit();
+        edit.setEditType(EditType.ADD_CLASS);
+        undoStack.push(edit);
+        redoStack.clear();
+        addClassNode(cls);
+        if (placeholderBox != null) placeholderBox.setVisible(false);
+        refreshMiniMap();
     }
 
     private Node buildMiniMap() {
@@ -638,6 +723,13 @@ public class DiagramEditorPanel extends BorderPane {
         canvas.setOnMouseMoved(event -> {
             statusCursorLabel.setText("cursor: " + (int) event.getX() + "," + (int) event.getY());
             statusZoomLabel.setText("zoom: " + (int) Math.round(canvas.getZoom() * 100) + "%");
+        });
+        canvasLayer.setOnScroll(event -> {
+            if (event.isControlDown()) {
+                double factor = event.getDeltaY() > 0 ? 1.1 : (1.0 / 1.1);
+                applyZoom(canvas.getZoom() * factor);
+                event.consume();
+            }
         });
     }
 
@@ -705,8 +797,8 @@ public class DiagramEditorPanel extends BorderPane {
                 return;
             }
             scene.getAccelerators().put(new KeyCodeCombination(KeyCode.Z, KeyCombination.CONTROL_DOWN), this::undo);
-            scene.getAccelerators().put(new KeyCodeCombination(KeyCode.Y, KeyCombination.CONTROL_DOWN), this::redo);
-            scene.getAccelerators().put(new KeyCodeCombination(KeyCode.Z, KeyCombination.CONTROL_DOWN, KeyCombination.SHIFT_DOWN), this::redo);
+            scene.getAccelerators().put(new KeyCodeCombination(KeyCode.Y, KeyCombination.CONTROL_DOWN), this::redo_internal);
+            scene.getAccelerators().put(new KeyCodeCombination(KeyCode.Z, KeyCombination.CONTROL_DOWN, KeyCombination.SHIFT_DOWN), this::redo_internal);
             scene.getAccelerators().put(new KeyCodeCombination(KeyCode.H, KeyCombination.CONTROL_DOWN, KeyCombination.SHIFT_DOWN), canvas::fitToWindow);
             scene.getAccelerators().put(new KeyCodeCombination(KeyCode.A, KeyCombination.CONTROL_DOWN), this::selectAllClasses);
             scene.addEventFilter(KeyEvent.KEY_PRESSED, this::onDiagramKeyPressedFiltered);
@@ -833,13 +925,11 @@ public class DiagramEditorPanel extends BorderPane {
     }
 
     private void zoomInFromShortcut() {
-        canvas.setZoom(canvas.getZoom() * 1.1);
-        statusZoomLabel.setText("zoom: " + (int) Math.round(canvas.getZoom() * 100) + "%");
+        applyZoom(canvas.getZoom() * 1.1);
     }
 
     private void zoomOutFromShortcut() {
-        canvas.setZoom(canvas.getZoom() / 1.1);
-        statusZoomLabel.setText("zoom: " + (int) Math.round(canvas.getZoom() * 100) + "%");
+        applyZoom(canvas.getZoom() / 1.1);
     }
 
     private void toggleFormatPanel() {
@@ -892,6 +982,27 @@ public class DiagramEditorPanel extends BorderPane {
             if (toolMode == ToolMode.PAN) {
                 return;
             }
+
+            // ── SHIFT+PRESS = start relationship drag ──────────────────────────────
+            if (event.isShiftDown()) {
+                toolMode = ToolMode.RELATIONSHIP;
+                pendingRelationshipSource = umlClass;
+                statusHintLabel.setText("Shift+drag to: " + umlClass.getName() + " → choose target");
+                ClassNode sourceNode = nodeMap.get(umlClass);
+                if (sourceNode != null) {
+                    Point2D start = anchorTowardPoint(sourceNode,
+                        new Point2D(event.getX() + node.getLayoutX(),
+                                    event.getY() + node.getLayoutY()));
+                    relationshipPreview.setStartX(start.getX());
+                    relationshipPreview.setStartY(start.getY());
+                    relationshipPreview.setEndX(start.getX());
+                    relationshipPreview.setEndY(start.getY());
+                    relationshipPreview.setVisible(true);
+                }
+                event.consume();
+                return;
+            }
+
             if (toolMode == ToolMode.RELATIONSHIP) {
                 if (pendingRelationshipSource == null) {
                     pendingRelationshipSource = umlClass;
@@ -924,6 +1035,16 @@ public class DiagramEditorPanel extends BorderPane {
             }
         });
         node.setOnMouseDragged(event -> {
+            // ── Update relationship preview line during Shift+drag ─────────────────
+            if (toolMode == ToolMode.RELATIONSHIP && pendingRelationshipSource != null) {
+                double mx = event.getX() + node.getLayoutX();
+                double my = event.getY() + node.getLayoutY();
+                relationshipPreview.setEndX(mx);
+                relationshipPreview.setEndY(my);
+                event.consume();
+                return;
+            }
+
             if (toolMode != ToolMode.SELECT) {
                 return;
             }
@@ -1194,8 +1315,8 @@ public class DiagramEditorPanel extends BorderPane {
 
     private void showEdgeFormatControls(RelationshipEdge edge) {
         TextField labelField = new TextField(edge.getMiddleLabel());
-        TextField sourceMult = new TextField("1");
-        TextField targetMult = new TextField("*");
+        TextField sourceMult = new TextField(edge.getSourceMultiplicity() == null ? "1" : edge.getSourceMultiplicity());
+        TextField targetMult = new TextField(edge.getTargetMultiplicity() == null ? "*" : edge.getTargetMultiplicity());
         ComboBox<RelationshipType> relationshipTypeBox = new ComboBox<>();
         relationshipTypeBox.getItems().addAll(RelationshipType.values());
         relationshipTypeBox.setValue(edge.getRelationshipType());
@@ -1205,6 +1326,16 @@ public class DiagramEditorPanel extends BorderPane {
         ComboBox<String> colorBox = new ComboBox<>();
         colorBox.getItems().addAll("Black", "Blue", "Red", "Green");
         colorBox.setValue(colorNameFromColor(edge.getStrokeColor()));
+        
+        relationshipTypeBox.setOnAction(e -> {
+            RelationshipType t = relationshipTypeBox.getValue();
+            if (t == RelationshipType.DEPENDENCY || t == RelationshipType.REALIZATION) {
+                lineStyleBox.setValue("Dashed");
+            } else {
+                lineStyleBox.setValue("Solid");
+            }
+        });
+        
         Button apply = new Button("Apply Edge Format");
         apply.setOnAction(event -> {
             Map<String, Object> before = captureEdgeState(edge);
@@ -1525,9 +1656,9 @@ public class DiagramEditorPanel extends BorderPane {
         RelationshipType previousType = edge.getRelationshipType();
         String incomingLabel = label == null ? "" : label.trim();
         String currentLabel = edge.getMiddleLabel() == null ? "" : edge.getMiddleLabel().trim();
+        // Only auto-set label if the user left it blank or it still matches the old type name
         boolean shouldAutoLabel = incomingLabel.isBlank()
-                || incomingLabel.equalsIgnoreCase(previousType.name())
-                || incomingLabel.equalsIgnoreCase(currentLabel);
+                || incomingLabel.equalsIgnoreCase(previousType.name());
         String resolvedLabel = shouldAutoLabel ? type.name() : label;
 
         edge.setMiddleLabel(resolvedLabel);
@@ -1544,7 +1675,16 @@ public class DiagramEditorPanel extends BorderPane {
         }
         Relationship relation = relationshipMap.get(edge);
         if (relation != null && relation.getType() != type) {
-            Relationship replacement = buildRelationship(type, relation.getSource(), relation.getTarget());
+            RelationshipLink currentLink = links.get(edge);
+            ConceptualClass src = currentLink != null ? currentLink.source : null;
+            ConceptualClass tgt = currentLink != null ? currentLink.target : null;
+            if (src == null || tgt == null) {
+                // fallback — keep existing relationship, just update type visually
+                edge.setRelationshipType(type);
+                return;
+            }
+            Relationship replacement = buildRelationship(type, src, tgt);
+            replacement.setRelationshipId(relation.getRelationshipId());
             replacement.setLabel(resolvedLabel);
             replacement.setSourceMultiplicity(sourceMultiplicity);
             replacement.setTargetMultiplicity(targetMultiplicity);
@@ -1554,6 +1694,9 @@ public class DiagramEditorPanel extends BorderPane {
             currentDiagram.getRelationships().remove(relation);
             currentDiagram.addRelationship(replacement);
             relationshipMap.put(edge, replacement);
+            if (currentLink != null) {
+                currentLink.type = type;
+            }
         } else if (relation != null) {
             relation.setLabel(resolvedLabel);
             relation.setSourceMultiplicity(sourceMultiplicity);
@@ -1826,14 +1969,13 @@ public class DiagramEditorPanel extends BorderPane {
                     ? RelationshipType.ASSOCIATION
                     : currentDiagram.getDefaultRelationshipType();
             addVisualRelationship(pendingRelationshipSource, target, type, null);
-            pendingRelationshipSource = null;
-            relationshipPreview.setVisible(false);
-            statusHintLabel.setText("relationship created");
-            return;
         }
-        // Keep source selected in relationship mode for click-click usability.
+        
+        // Always reset after completion:
+        toolMode = ToolMode.SELECT;
+        pendingRelationshipSource = null;
         relationshipPreview.setVisible(false);
-        statusHintLabel.setText("relationship: drop on another class");
+        statusHintLabel.setText("Shift+drag between classes to connect  |  Ctrl+Z undo  |  Del delete");
     }
 
     private static class RelationshipLink {
@@ -1852,5 +1994,235 @@ public class DiagramEditorPanel extends BorderPane {
         SELECT,
         PAN,
         RELATIONSHIP
+    }
+
+    // ── New public API required by MainWindow / panels ────────────────────────
+
+    /** Returns the title of the current diagram, or "—" if none loaded. */
+    public String getCurrentDiagramName() {
+        if (currentDiagram == null) return "—";
+        String t = currentDiagram.getTitle();
+        return (t != null && !t.isBlank()) ? t : "Untitled Diagram";
+    }
+
+    /** Returns the UUID of the current diagram, or null if none loaded. */
+    public java.util.UUID getCurrentDiagramId() {
+        return currentDiagram != null ? currentDiagram.getDiagramId() : null;
+    }
+
+    /** Returns the number of classes in the current diagram. */
+    public int getNodeCount() {
+        return currentDiagram != null ? currentDiagram.getClasses().size() : 0;
+    }
+
+    /** Returns the current zoom level as an integer percentage. */
+    public int getZoomPercent() {
+        return (int) Math.round(canvas.getZoom() * 100);
+    }
+
+    /** Alias for renderDiagram — loads a diagram onto the canvas. */
+    public void loadDiagram(UMLDiagram d) {
+        renderDiagram(d);
+    }
+
+    /** Creates and loads a fresh blank diagram (no persistence). */
+    public void newBlankDiagram() {
+        UMLDiagram d = new UMLDiagram();
+        d.setDiagramId(null);
+        d.setTitle("Untitled Diagram");
+        d.setRenderState(com.umlytics.enums.RenderState.PENDING);
+        renderDiagram(d);
+        statusHintLabel.setText("blank diagram created");
+    }
+
+    /** Persists the current diagram via DiagramController. */
+    public void saveCurrentDiagram() {
+        if (diagramCtrl != null && currentDiagram != null) {
+            if (currentDiagram.getProjectId() == null && defaultProjectIdForNewDiagrams != null) {
+                currentDiagram.setProjectId(defaultProjectIdForNewDiagrams);
+            }
+            diagramCtrl.saveDiagram(currentDiagram);
+        }
+    }
+
+    /** Deletes a diagram by ID via DiagramController and clears the canvas. */
+    public void deleteDiagram(java.util.UUID diagramId) {
+        if (diagramCtrl != null) {
+            diagramCtrl.deleteDiagram(diagramId);
+        }
+        currentDiagram = null;
+        nodeMap.clear();
+        links.clear();
+        relationshipMap.clear();
+        handlesMap.clear();
+        canvasLayer.getChildren().setAll(canvas, relationshipPreview, selectionBox);
+        canvas.redraw();
+        statusHintLabel.setText("diagram deleted");
+    }
+
+    /** Shows a text-input dialog and generates a diagram from the description. */
+    public void showGenerateFromTextDialog() {
+        if (diagramCtrl == null) { statusHintLabel.setText("no controller"); return; }
+        java.util.UUID pid = currentDiagram != null ? currentDiagram.getProjectId() : null;
+        if (pid == null) {
+            pid = defaultProjectIdForNewDiagrams;
+        }
+        if (pid == null) {
+            MainWindow.showToast("Open or create a project first before generating a diagram.");
+            return;
+        }
+        final java.util.UUID projectId = pid;
+        javafx.scene.control.TextInputDialog dlg = new javafx.scene.control.TextInputDialog();
+        dlg.setTitle("Generate from Text");
+        dlg.setHeaderText("Describe your system:");
+        dlg.setContentText("E.g. \"A library with Book, Member, and Loan classes\"");
+        dlg.showAndWait().ifPresent(desc -> {
+            if (desc.isBlank()) return;
+            // FIX 9: show progress immediately on UI thread
+            statusHintLabel.setText("⏳ Generating diagram from AI...");
+            new Thread(() -> {
+                try {
+                    UMLDiagram d = diagramCtrl.generateFromText(projectId, desc);
+                    javafx.application.Platform.runLater(() -> {
+                        renderDiagram(d);
+                        statusHintLabel.setText("Diagram generated ✓");
+                        MainWindow.showToast("Diagram generated ✓");
+                        MainWindow.notifyDiagramChanged();
+                    });
+                } catch (com.umlytics.exceptions.ValidationException ex) {
+                    javafx.application.Platform.runLater(() -> {
+                        statusHintLabel.setText("ready");
+                        MainWindow.showToast("Description too short: " + ex.getMessage());
+                    });
+                } catch (Exception ex) {
+                    javafx.application.Platform.runLater(() -> {
+                        statusHintLabel.setText("ready");
+                        MainWindow.showToast("Error: " + ex.getMessage());
+                    });
+                }
+            }, "gen-text-thread").start();
+        });
+    }
+
+    /** Shows an export format dialog and saves the diagram to a file. */
+    public void showExportDialog() {
+        if (currentDiagram == null) { MainWindow.showToast("No diagram loaded"); return; }
+        javafx.scene.control.ChoiceDialog<String> dlg =
+            new javafx.scene.control.ChoiceDialog<>("PNG", "PNG", "SVG");
+        dlg.setTitle("Export Diagram");
+        dlg.setHeaderText("Select export format:");
+        dlg.showAndWait().ifPresent(fmt -> {
+            javafx.stage.FileChooser fc = new javafx.stage.FileChooser();
+            fc.setTitle("Save As");
+            fc.getExtensionFilters().add(
+                new javafx.stage.FileChooser.ExtensionFilter(fmt + " File", "*." + fmt.toLowerCase()));
+            java.io.File file = fc.showSaveDialog(null);
+            if (file == null) return;
+            try {
+                ExportFormat ef = ExportFormat.valueOf(fmt);
+                if (diagramCtrl != null && currentDiagram.getDiagramId() != null) {
+                    diagramCtrl.exportDiagram(currentDiagram.getDiagramId(), ef, file.getAbsolutePath());
+                } else {
+                    new com.umlytics.services.DiagramExportService().export(currentDiagram, ef, file.getAbsolutePath());
+                }
+                MainWindow.showToast("Exported to " + file.getName());
+            } catch (Exception ex) {
+                MainWindow.showToast("Export failed: " + ex.getMessage());
+            }
+        });
+    }
+
+    /** FIX 6: Opens a file chooser for a UML diagram image and analyzes it via AI. */
+    public void showUploadImageDialog() {
+        if (diagramCtrl == null) { MainWindow.showToast("No controller available."); return; }
+        javafx.stage.FileChooser fc = new javafx.stage.FileChooser();
+        fc.setTitle("Upload UML Diagram Image");
+        fc.getExtensionFilters().add(
+            new javafx.stage.FileChooser.ExtensionFilter("Image Files", "*.png", "*.jpg", "*.jpeg"));
+        java.io.File file = fc.showOpenDialog(null);
+        if (file == null) return;
+        try {
+            byte[] imageData = java.nio.file.Files.readAllBytes(file.toPath());
+            java.util.UUID pid = currentDiagram != null ? currentDiagram.getProjectId() : null;
+            if (pid == null) {
+                pid = defaultProjectIdForNewDiagrams;
+            }
+            if (pid == null) {
+                MainWindow.showToast("Open or create a project first.");
+                return;
+            }
+            final java.util.UUID projectId = pid;
+            final String imageFileName = file.getName();
+            statusHintLabel.setText("⏳ Analyzing image...");
+            new Thread(() -> {
+                try {
+                    UMLDiagram analyzed = diagramCtrl.analyzeUploadedImage(projectId, imageData);
+                    analyzed.setTitle("From Image: " + imageFileName);
+                    javafx.application.Platform.runLater(() -> {
+                        renderDiagram(analyzed);
+                        statusHintLabel.setText("Image analyzed ✓");
+                        MainWindow.showToast("Image analyzed ✓");
+                        MainWindow.notifyDiagramChanged();
+                    });
+                } catch (Exception ex) {
+                    javafx.application.Platform.runLater(() -> {
+                        statusHintLabel.setText("ready");
+                        MainWindow.showToast("Image analysis failed: " + ex.getMessage());
+                    });
+                }
+            }, "image-analyze-thread").start();
+        } catch (java.io.IOException ex) {
+            MainWindow.showToast("Could not read file: " + ex.getMessage());
+        }
+    }
+
+    /** Fits all nodes to the visible window. */
+    public void fitToScreen() {
+        canvas.fitToWindow();
+        applyZoom(Math.max(0.2, Math.min(1.0, 800.0 / Math.max(canvasLayer.getWidth(), 800))));
+        statusHintLabel.setText("fit to screen");
+        canvas.resetPan();
+    }
+
+    /** Zooms in by 10%. */
+    public void zoomIn() {
+        applyZoom(canvas.getZoom() * 1.1);
+    }
+
+    /** Zooms out by 10%. */
+    public void zoomOut() {
+        applyZoom(canvas.getZoom() / 1.1);
+    }
+
+    private void applyZoom(double newZoom) {
+        newZoom = Math.max(0.1, Math.min(4.0, newZoom));
+        canvas.setZoom(newZoom);                          // redraws grid
+        if (canvasScaleTransform != null) {
+            canvasScaleTransform.setX(newZoom);           // scales ClassNode children
+            canvasScaleTransform.setY(newZoom);
+        }
+        statusZoomLabel.setText("zoom: " + (int) Math.round(newZoom * 100) + "%");
+        
+        // Recompute all edge positions at new zoom
+        for (Map.Entry<RelationshipEdge, RelationshipLink> entry : links.entrySet()) {
+            RelationshipEdge edge  = entry.getKey();
+            RelationshipLink link  = entry.getValue();
+            ClassNode s = nodeMap.get(link.source);
+            ClassNode t = nodeMap.get(link.target);
+            if (s == null || t == null) continue;
+            Point2D start = anchorToward(s, t);
+            Point2D end   = anchorToward(t, s);
+            edge.update(start.getX(), start.getY(), end.getX(), end.getY());
+        }
+    }
+
+    /** Performs undo. */
+    public void undo() {
+        undo_internal();
+    }
+
+    /** Performs redo. */
+    public void redo() {
+        redo_internal();
     }
 }

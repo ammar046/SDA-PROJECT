@@ -123,6 +123,9 @@ public class DiagramController {
         }
         if (diagram.getDiagramId() == null) {
             diagram.setDiagramId(UUID.randomUUID());
+        }
+        UMLDiagram existing = diagramRepo.findById(diagram.getDiagramId());
+        if (existing == null) {
             diagramRepo.save(diagram);
         } else {
             diagramRepo.update(diagram);
@@ -137,7 +140,7 @@ public class DiagramController {
         return listProjectDiagrams(UUID.nameUUIDFromBytes(("legacy-project-" + projectId).getBytes()));
     }
 
-    public DiagramImage analyzeUploadedImage(UUID projectId, byte[] img) {
+    public UMLDiagram analyzeUploadedImage(UUID projectId, byte[] img) {
         if (img == null || img.length == 0) {
             throw new UnsupportedFileException("Image is empty.");
         }
@@ -148,17 +151,14 @@ public class DiagramController {
             throw new UnsupportedFileException("Only PNG/JPG images are supported.");
         }
         UMLModel model = aiEngine.analyzeImage(img);
-        DiagramImage image = new DiagramImage();
-        image.setImageId(UUID.randomUUID());
-        image.setDiagramId(projectId);
-        image.setImageData(img);
-        image.setUploadDate(LocalDateTime.now());
-        image.setImageFormat(looksLikePng(img) ? ImageFormat.PNG : ImageFormat.JPG);
-        image.setFileName("uploaded-diagram");
-        return image;
+        UMLDiagram diagram = model.toUMLDiagram();
+        diagram.setProjectId(projectId);
+        diagram.setSourceType(SourceType.UPLOADED_IMAGE);
+        diagramRepo.save(diagram);
+        return diagram;
     }
 
-    public DiagramImage analyzeUploadedImage(int projectId, byte[] img) {
+    public UMLDiagram analyzeUploadedImage(int projectId, byte[] img) {
         return analyzeUploadedImage(UUID.nameUUIDFromBytes(("legacy-project-" + projectId).getBytes()), img);
     }
 
@@ -192,17 +192,25 @@ public class DiagramController {
         }
         UMLModel model = new UMLModel();
         model.setClasses(diagram.getClasses());
+        model.setRelationships(diagram.getRelationships());
         String skeleton = aiEngine.generateStructure(model);
         ClassSuggestion suggestion = new ClassSuggestion();
         suggestion.setSuggestionId(UUID.randomUUID());
         suggestion.setDiagramId(diagramId);
-        suggestion.setSkeletonCode(skeleton);
+        suggestion.setSkeletonCode(ClassSuggestion.combineSkeletonResponse(skeleton));
         suggestion.setAccepted(false);
         return suggestion;
     }
 
     public ClassSuggestion generateStructureSuggestions(int diagramId) {
         return generateStructureSuggestions(UUID.nameUUIDFromBytes(("legacy-diagram-" + diagramId).getBytes()));
+    }
+
+    // GRASP: Controller — delegates persistence to repository
+    public void deleteDiagram(UUID diagramId) {
+        if (diagramId != null) {
+            diagramRepo.delete(diagramId);
+        }
     }
 
     private void pruneInvalidRelationships(UMLDiagram diagram) {

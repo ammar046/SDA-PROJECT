@@ -1,8 +1,12 @@
 package com.umlytics.controllers;
 
+import com.umlytics.domain.ChatMessage;
+import com.umlytics.domain.DesignEvaluationReport;
 import com.umlytics.domain.Project;
 import com.umlytics.domain.UMLDiagram;
 import com.umlytics.exceptions.ValidationException;
+import com.umlytics.interfaces.IChatRepository;
+import com.umlytics.interfaces.IEvaluationRepository;
 import com.umlytics.interfaces.IDiagramRepository;
 import com.umlytics.interfaces.IProjectRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -22,7 +26,11 @@ class ProjectControllerTest {
     @BeforeEach
     void setUp() {
         projectRepository = new InMemoryProjectRepository();
-        controller = new ProjectController(projectRepository, new InMemoryDiagramRepository());
+        controller = new ProjectController(
+                projectRepository,
+                new InMemoryDiagramRepository(),
+                new InMemoryChatRepository(),
+                new InMemoryEvaluationRepository());
     }
 
     @Test
@@ -87,6 +95,41 @@ class ProjectControllerTest {
         @Override
         public void update(Project p) {
             // no-op for test.
+        }
+    }
+
+    private static class InMemoryChatRepository implements IChatRepository {
+        @Override
+        public void save(ChatMessage m) {
+        }
+
+        @Override
+        public List<ChatMessage> findByProject(UUID projectId) {
+            return List.of();
+        }
+
+        @Override
+        public void delete(UUID id) {
+        }
+    }
+
+    private static class InMemoryEvaluationRepository implements IEvaluationRepository {
+        @Override
+        public void save(DesignEvaluationReport r) {
+        }
+
+        @Override
+        public List<DesignEvaluationReport> findByProject(UUID projectId) {
+            return List.of();
+        }
+
+        @Override
+        public DesignEvaluationReport findByDiagram(UUID diagramId) {
+            return null;
+        }
+
+        @Override
+        public void delete(UUID id) {
         }
     }
 

@@ -45,6 +45,10 @@ public class RelationshipEdge extends Group {
         this.middleLabel = new Label("");
         this.sourceMultiplicityLabel = new Label("1");
         this.targetMultiplicityLabel = new Label("*");
+        
+        middleLabel.setStyle("-fx-text-fill: #e0e0e0; -fx-background-color: #1e1e2a; -fx-padding: 0 4;");
+        sourceMultiplicityLabel.setStyle("-fx-text-fill: #b0b0b0;");
+        targetMultiplicityLabel.setStyle("-fx-text-fill: #b0b0b0;");
 
         segment1.setStrokeWidth(1.4);
         segment2.setStrokeWidth(1.4);
@@ -92,16 +96,8 @@ public class RelationshipEdge extends Group {
         segment3.setEndX(endX);
         segment3.setEndY(endY);
 
-        arrowHead.getPoints().setAll(
-                endX, endY,
-                endX - 10, endY - 5,
-                endX - 10, endY + 5
-        );
-        startMarker.getPoints().setAll(
-                startX, startY,
-                startX + 10, startY - 5,
-                startX + 10, startY + 5
-        );
+        // Removed hardcoded point assignments here because setRelationshipType handles it now with correct direction
+        setRelationshipType(relationshipType);
 
         middleLabel.setLayoutX(midX + 6);
         middleLabel.setLayoutY((startY + endY) / 2.0 - 10);
@@ -113,7 +109,6 @@ public class RelationshipEdge extends Group {
         topWaypoint.setLayoutY(startY - 4);
         bottomWaypoint.setLayoutX(midX - 4);
         bottomWaypoint.setLayoutY(endY - 4);
-        setRelationshipType(relationshipType);
     }
 
     public void setRelationshipType(RelationshipType type) {
@@ -121,12 +116,16 @@ public class RelationshipEdge extends Group {
         segment1.getStrokeDashArray().clear();
         segment2.getStrokeDashArray().clear();
         segment3.getStrokeDashArray().clear();
+        
+        double endSign = endX >= bendX ? 1.0 : -1.0;
+        double startSign = bendX >= startX ? 1.0 : -1.0;
+
         startMarker.setVisible(false);
         arrowHead.setFill(Color.TRANSPARENT);
         arrowHead.getPoints().setAll(
                 endX, endY,
-                endX - 10, endY - 5,
-                endX - 10, endY + 5
+                endX - 10 * endSign, endY - 5,
+                endX - 10 * endSign, endY + 5
         );
 
         switch (type) {
@@ -139,25 +138,29 @@ public class RelationshipEdge extends Group {
                 segment1.getStrokeDashArray().setAll(7.0, 5.0);
                 segment2.getStrokeDashArray().setAll(7.0, 5.0);
                 segment3.getStrokeDashArray().setAll(7.0, 5.0);
+                arrowHead.setFill(Color.WHITE);
                 arrowHead.getPoints().setAll(
                         endX, endY,
-                        endX - 14, endY - 8,
-                        endX - 14, endY + 8
+                        endX - 14 * endSign, endY - 8,
+                        endX - 14 * endSign, endY + 8
                 );
             }
-            case INHERITANCE -> arrowHead.getPoints().setAll(
-                    endX, endY,
-                    endX - 14, endY - 8,
-                    endX - 14, endY + 8
-            );
+            case INHERITANCE -> {
+                arrowHead.setFill(Color.WHITE);
+                arrowHead.getPoints().setAll(
+                        endX, endY,
+                        endX - 14 * endSign, endY - 8,
+                        endX - 14 * endSign, endY + 8
+                );
+            }
             case COMPOSITION -> {
                 startMarker.setVisible(true);
                 startMarker.setFill(Color.BLACK);
                 startMarker.getPoints().setAll(
                         startX, startY,
-                        startX + 10, startY - 6,
-                        startX + 20, startY,
-                        startX + 10, startY + 6
+                        startX + 10 * startSign, startY - 6,
+                        startX + 20 * startSign, startY,
+                        startX + 10 * startSign, startY + 6
                 );
             }
             case AGGREGATION -> {
@@ -165,9 +168,9 @@ public class RelationshipEdge extends Group {
                 startMarker.setFill(Color.WHITE);
                 startMarker.getPoints().setAll(
                         startX, startY,
-                        startX + 10, startY - 6,
-                        startX + 20, startY,
-                        startX + 10, startY + 6
+                        startX + 10 * startSign, startY - 6,
+                        startX + 20 * startSign, startY,
+                        startX + 10 * startSign, startY + 6
                 );
             }
             default -> {

@@ -27,8 +27,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import com.umlytics.interfaces.IEvaluationRepository;
+
 public class EvaluationPanel extends VBox {
     private AIController aiCtrl;
+    private IEvaluationRepository evalRepo;
     private final Label couplingScoreLabel;
     private final Label cohesionScoreLabel;
     private final Label solidScoreLabel;
@@ -41,6 +44,10 @@ public class EvaluationPanel extends VBox {
     private final Label statusLabel;
     private DesignEvaluationReport lastReport;
     private int activeDiagramId = 1;
+
+    public void setEvalRepo(IEvaluationRepository evalRepo) {
+        this.evalRepo = evalRepo;
+    }
 
     public EvaluationPanel() {
         setSpacing(10);
@@ -97,6 +104,9 @@ public class EvaluationPanel extends VBox {
         }
         try {
             DesignEvaluationReport report = aiCtrl.evaluateDesign(activeDiagramId);
+            if (evalRepo != null) {
+                evalRepo.save(report);
+            }
             displayReport(report);
             statusLabel.setText("Evaluation generated.");
         } catch (Exception e) {

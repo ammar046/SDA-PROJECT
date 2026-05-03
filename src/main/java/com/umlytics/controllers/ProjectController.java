@@ -2,6 +2,8 @@ package com.umlytics.controllers;
 
 import com.umlytics.domain.Project;
 import com.umlytics.exceptions.ValidationException;
+import com.umlytics.interfaces.IChatRepository;
+import com.umlytics.interfaces.IEvaluationRepository;
 import com.umlytics.interfaces.IDiagramRepository;
 import com.umlytics.interfaces.IProjectRepository;
 
@@ -12,10 +14,15 @@ import java.util.UUID;
 public class ProjectController {
     private final IProjectRepository projectRepo;
     private final IDiagramRepository diagramRepo;
+    private final IChatRepository chatRepo;
+    private final IEvaluationRepository evalRepo;
 
-    public ProjectController(IProjectRepository projectRepo, IDiagramRepository diagramRepo) {
+    public ProjectController(IProjectRepository projectRepo, IDiagramRepository diagramRepo,
+                             IChatRepository chatRepo, IEvaluationRepository evalRepo) {
         this.projectRepo = projectRepo;
         this.diagramRepo = diagramRepo;
+        this.chatRepo = chatRepo;
+        this.evalRepo = evalRepo;
     }
 
     public Project createProject(String name, String desc) {
@@ -40,6 +47,10 @@ public class ProjectController {
         }
         project.getDiagrams().clear();
         project.getDiagrams().addAll(diagramRepo.findByProject(projectId));
+        project.getChatHistory().clear();
+        project.getChatHistory().addAll(chatRepo.findByProject(projectId));
+        project.getEvaluationHistory().clear();
+        project.getEvaluationHistory().addAll(evalRepo.findByProject(projectId));
         return project;
     }
 
@@ -78,5 +89,10 @@ public class ProjectController {
 
     public List<Project> getAllProjects() {
         return projectRepo.findAll();
+    }
+
+    /** Returns project metadata only (no eager-loaded aggregates). */
+    public Project findProject(UUID projectId) {
+        return projectRepo.findById(projectId);
     }
 }

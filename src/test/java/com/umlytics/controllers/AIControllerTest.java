@@ -6,9 +6,11 @@ import com.umlytics.domain.ProjectContext;
 import com.umlytics.domain.UMLModel;
 import com.umlytics.exceptions.DiagramTooSimpleException;
 import com.umlytics.exceptions.ValidationException;
+import com.umlytics.domain.UMLDiagram;
 import com.umlytics.interfaces.IAIEngine;
 import com.umlytics.interfaces.IChatRepository;
 import com.umlytics.interfaces.IEvaluationRepository;
+import com.umlytics.interfaces.IDiagramRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -28,7 +30,7 @@ class AIControllerTest {
     void setUp() {
         chatRepo = new InMemoryChatRepo();
         evalRepo = new InMemoryEvalRepo();
-        controller = new AIController(new StubAI(), chatRepo, evalRepo);
+        controller = new AIController(new StubAI(), chatRepo, evalRepo, new InMemoryDiagramRepo());
     }
 
     @Test
@@ -95,6 +97,30 @@ class AIControllerTest {
 
         @Override
         public void delete(UUID id) {
+        }
+    }
+
+    private static class InMemoryDiagramRepo implements IDiagramRepository {
+        @Override
+        public void save(UMLDiagram d) {
+        }
+
+        @Override
+        public UMLDiagram findById(UUID id) {
+            return null;
+        }
+
+        @Override
+        public List<UMLDiagram> findByProject(UUID projectId) {
+            return List.of();
+        }
+
+        @Override
+        public void delete(UUID id) {
+        }
+
+        @Override
+        public void update(UMLDiagram d) {
         }
     }
 

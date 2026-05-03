@@ -4,6 +4,7 @@ import com.umlytics.domain.ClassSuggestion;
 import com.umlytics.domain.ChatMessage;
 import com.umlytics.domain.DesignEvaluationReport;
 import com.umlytics.domain.ProjectContext;
+import com.umlytics.domain.UMLDiagram;
 import com.umlytics.domain.UMLModel;
 import com.umlytics.enums.SenderType;
 import com.umlytics.exceptions.DiagramTooSimpleException;
@@ -11,6 +12,7 @@ import com.umlytics.exceptions.EmptyDiagramException;
 import com.umlytics.exceptions.ValidationException;
 import com.umlytics.interfaces.IAIEngine;
 import com.umlytics.interfaces.IChatRepository;
+import com.umlytics.interfaces.IDiagramRepository;
 import com.umlytics.interfaces.IEvaluationRepository;
 
 import java.time.LocalDateTime;
@@ -22,21 +24,36 @@ public class AIController {
     private final IAIEngine aiEngine;
     private final IChatRepository chatRepo;
     private final IEvaluationRepository evalRepo;
+    private final IDiagramRepository diagramRepo;
 
-    public AIController(IAIEngine aiEngine, IChatRepository chatRepo, IEvaluationRepository evalRepo) {
+    public AIController(IAIEngine aiEngine, IChatRepository chatRepo, IEvaluationRepository evalRepo,
+                        IDiagramRepository diagramRepo) {
         this.aiEngine = aiEngine;
         this.chatRepo = chatRepo;
         this.evalRepo = evalRepo;
+        this.diagramRepo = diagramRepo;
     }
 
     public DesignEvaluationReport evaluateDesign(UUID diagramId) {
         if (diagramId == null) {
-            throw new DiagramTooSimpleException("Valid diagram ID required.");
+            throw new DiagramTooSimpleException("No diagram selected for evaluation.");
         }
-        DesignEvaluationReport report = aiEngine.evaluateDesign(new UMLModel());
+        UMLDiagram diagram = diagramRepo.findById(diagramId);
+        if (diagram == null) {
+            throw new DiagramTooSimpleException("Diagram not found: " + diagramId);
+        }
+        if (diagram.getClasses().size() < 2) {
+            throw new DiagramTooSimpleException("Evaluation requires at least 2 classes.");
+        }
+        UMLModel model = new UMLModel();
+        model.setClasses(new java.util.ArrayList<>(diagram.getClasses()));
+        model.setRelationships(new java.util.ArrayList<>(diagram.getRelationships()));
+        model.setRawJson(diagram.serialize());
+
+        DesignEvaluationReport report = aiEngine.evaluateDesign(model);
         report.setReportId(UUID.randomUUID());
         report.setDiagramId(diagramId);
-        report.setEvaluationDate(LocalDateTime.now());
+        report.setEvaluationDate(java.time.LocalDateTime.now());
         evalRepo.save(report);
         return report;
     }
@@ -46,6 +63,13 @@ public class AIController {
     }
 
     public ChatMessage submitDesignQuestion(String questionText, UUID projectId) {
+        return submitDesignQuestion(questionText, projectId, null);
+    }
+
+    /**
+     * @param diagramId when non-null, the AI sees this diagram’s classes and relationships (same canvas as the editor).
+     */
+    public ChatMessage submitDesignQuestion(String questionText, UUID projectId, UUID diagramId) {
         if (projectId == null) {
             throw new ValidationException("Open a project first.");
         }
@@ -62,6 +86,12 @@ public class AIController {
 
         ProjectContext context = new ProjectContext();
         context.setChatHistory(chatRepo.findByProject(projectId));
+        if (diagramId != null) {
+            UMLDiagram d = diagramRepo.findById(diagramId);
+            if (d != null) {
+                context.setCurrentDiagram(d);
+            }
+        }
         String response = aiEngine.consultDesign(questionText.trim(), context);
 
         ChatMessage aiMessage = new ChatMessage();
@@ -80,13 +110,22 @@ public class AIController {
 
     public ClassSuggestion generateStructureSuggestions(UUID diagramId) {
         if (diagramId == null) {
-            throw new EmptyDiagramException("No diagram selected.");
+            throw new EmptyDiagramException("No diagram selected for structure generation.");
         }
-        String response = aiEngine.generateStructure(new UMLModel());
+        UMLDiagram diagram = diagramRepo.findById(diagramId);
+        if (diagram == null || diagram.getClasses().isEmpty()) {
+            throw new EmptyDiagramException("No classes defined. Add classes to the diagram first.");
+        }
+        UMLModel model = new UMLModel();
+        model.setClasses(new java.util.ArrayList<>(diagram.getClasses()));
+        model.setRelationships(new java.util.ArrayList<>(diagram.getRelationships()));
+        model.setRawJson(diagram.serialize());
+
+        String response = aiEngine.generateStructure(model);
         ClassSuggestion suggestion = new ClassSuggestion();
         suggestion.setSuggestionId(UUID.randomUUID());
         suggestion.setDiagramId(diagramId);
-        suggestion.setSkeletonCode(response);
+        suggestion.setSkeletonCode(ClassSuggestion.combineSkeletonResponse(response));
         suggestion.setAccepted(false);
         return suggestion;
     }

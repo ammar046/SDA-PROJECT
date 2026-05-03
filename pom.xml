@@ -80,6 +80,11 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.3.0</version>
+                <configuration>
+                    <environmentVariables>
+                        <UMLYTICS_SKIP_LOCAL_CONFIG>true</UMLYTICS_SKIP_LOCAL_CONFIG>
+                    </environmentVariables>
+                </configuration>
             </plugin>
             <plugin>
                 <groupId>org.openjfx</groupId>

@@ -6,7 +6,7 @@ import javafx.scene.input.ScrollEvent;
 import javafx.scene.paint.Color;
 
 public class DiagramCanvas extends Canvas {
-    private static final double GRID_SIZE = 10.0;
+    private static final double GRID_SIZE = 20.0;
     private double zoom = 1.0;
     private double panX;
     private double panY;
@@ -21,17 +21,17 @@ public class DiagramCanvas extends Canvas {
 
     public void redraw() {
         GraphicsContext gc = getGraphicsContext2D();
-        gc.setFill(Color.WHITE);
+
+        // Dark background
+        gc.setFill(Color.web("#1e1e2a"));
         gc.fillRect(0, 0, getWidth(), getHeight());
 
-        gc.setStroke(Color.web("#e0e0e0"));
-        gc.setLineWidth(1);
-        for (double x = panX % GRID_SIZE; x < getWidth(); x += GRID_SIZE * zoom) {
-            gc.strokeLine(x, 0, x, getHeight());
-        }
-        for (double y = panY % GRID_SIZE; y < getHeight(); y += GRID_SIZE * zoom) {
-            gc.strokeLine(0, y, getWidth(), y);
-        }
+        // Dark subtle grid lines
+        gc.setStroke(Color.web("#2e2e3e", 0.7));
+        gc.setLineWidth(0.5);
+        double step = GRID_SIZE * zoom;
+        for (double x = panX % step; x < getWidth();  x += step) gc.strokeLine(x, 0, x, getHeight());
+        for (double y = panY % step; y < getHeight(); y += step) gc.strokeLine(0, y, getWidth(), y);
     }
 
     private void initializeInteractions() {
@@ -46,7 +46,13 @@ public class DiagramCanvas extends Canvas {
             dragStartY = event.getY();
             redraw();
         });
-        setOnScroll(this::onScrollZoom);
+        setOnScroll(event -> {
+            if (event.isControlDown()) {
+                // Let DiagramEditorPanel handle Ctrl+scroll for unified zoom
+                return;
+            }
+            onScrollZoom(event);
+        });
     }
 
     private void onScrollZoom(ScrollEvent event) {
@@ -57,6 +63,12 @@ public class DiagramCanvas extends Canvas {
 
     public double getZoom() {
         return zoom;
+    }
+
+    public void resetPan() {
+        this.panX = 0;
+        this.panY = 0;
+        redraw();
     }
 
     public void setZoom(double zoom) {

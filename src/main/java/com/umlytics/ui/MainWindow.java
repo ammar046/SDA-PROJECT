@@ -1,377 +1,297 @@
 package com.umlytics.ui;
 
-import com.umlytics.controllers.AIController;
-import com.umlytics.controllers.DiagramController;
-import com.umlytics.controllers.ProjectController;
-import com.umlytics.domain.DiagramImage;
+import com.umlytics.controllers.*;
+import com.umlytics.db.DatabaseManager;
 import com.umlytics.domain.Project;
 import com.umlytics.domain.UMLDiagram;
-import com.umlytics.enums.ExportFormat;
-import com.umlytics.interfaces.ISpeechToTextService;
-import javafx.application.Application;
-import javafx.collections.FXCollections;
-import javafx.scene.Scene;
-import javafx.scene.control.Alert;
-import javafx.scene.control.ButtonBar;
-import javafx.scene.control.ButtonType;
-import javafx.scene.control.ChoiceDialog;
-import javafx.scene.control.Dialog;
-import javafx.scene.control.Label;
-import javafx.scene.control.Menu;
-import javafx.scene.control.MenuBar;
-import javafx.scene.control.MenuItem;
-import javafx.scene.control.Tab;
-import javafx.scene.control.TabPane;
-import javafx.scene.control.TextArea;
-import javafx.scene.control.ToolBar;
-import javafx.scene.control.TextInputControl;
-import javafx.scene.input.KeyCode;
-import javafx.scene.input.KeyCodeCombination;
-import javafx.scene.input.KeyCombination;
-import javafx.scene.input.KeyEvent;
-import javafx.scene.layout.BorderPane;
-import javafx.scene.layout.HBox;
-import javafx.stage.FileChooser;
+import com.umlytics.exceptions.ValidationException;
+import com.umlytics.interfaces.*;
+import com.umlytics.repository.*;
+import com.umlytics.services.*;
+import com.umlytics.ui.panels.*;
+import javafx.animation.*;
+import javafx.application.*;
+import javafx.geometry.*;
+import javafx.scene.*;
+import javafx.scene.control.*;
+import javafx.scene.input.*;
+import javafx.scene.layout.*;
 import javafx.stage.Stage;
+import javafx.util.Duration;
 
-import java.io.File;
-import java.nio.file.Files;
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
-import java.util.Optional;
+import java.util.UUID;
 
-// GRASP: Controller (Facade / Boundary)
+// GRASP: Facade — single access point for all controllers and UI panels
+// GoF:   Facade
 public class MainWindow extends Application {
+
+    // Controllers
     private ProjectController projectCtrl;
     private DiagramController diagramCtrl;
-    private AIController aiCtrl;
-    private ISpeechToTextService speechSvc;
-    private Project activeProject;
-    private TabPane workspaceTabs;
-    private ProjectDashboardPanel dashboardPanel;
+    private AIController      aiCtrl;
 
-    public MainWindow() {
-    }
+    // Panels
+    private ToolbarPanel          toolbarPanel;
+    private ShapePalettePanel     shapePanel;
+    private ProjectExplorerPanel  explorerPanel;
+    private DiagramEditorPanel    editorPanel;
+    private AIChatPanel           chatPanel;
 
-    public MainWindow(ProjectController projectCtrl, DiagramController diagramCtrl, AIController aiCtrl) {
-        this.projectCtrl = projectCtrl;
-        this.diagramCtrl = diagramCtrl;
-        this.aiCtrl = aiCtrl;
-    }
+    /** Project used for new diagrams, code import, and status bar when set. */
+    private UUID activeProjectId;
 
-    public MainWindow(ProjectController projectCtrl, DiagramController diagramCtrl, AIController aiCtrl, ISpeechToTextService speechSvc) {
-        this(projectCtrl, diagramCtrl, aiCtrl);
-        this.speechSvc = speechSvc;
-    }
+    // Status bar
+    private Label lbProject, lbDiagram, lbNodes, lbZoom, lbSaved;
 
-    public void openProject() {
-        if (dashboardPanel != null) {
-            dashboardPanel.refreshProjects();
-        }
-    }
+    // Toast
+    private static StackPane toastOverlay;
 
-    public void createProject() {
-        if (dashboardPanel != null) {
-            dashboardPanel.onCreateProject();
-        }
-    }
+    private static volatile MainWindow instance;
 
-    public void showDiagramEditor() {
-        showDiagramEditor(null, "Diagram");
-    }
+    private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("HH:mm:ss");
 
-    public void showDiagramEditor(UMLDiagram diagram, String title) {
-        DiagramEditorPanel editorPanel = new DiagramEditorPanel(diagramCtrl);
-        if (diagram != null) {
-            editorPanel.renderDiagram(diagram);
-        }
-        Tab tab = new Tab(title == null || title.isBlank() ? "Diagram" : title, editorPanel);
-        workspaceTabs.getTabs().add(tab);
-        workspaceTabs.getSelectionModel().select(tab);
-    }
-
-    public void showChatPanel() {
-        ChatPanel chatPanel = new ChatPanel();
-        chatPanel.setAiCtrl(aiCtrl);
-        chatPanel.setSpeechSvc(speechSvc);
-        if (activeProject != null) {
-            chatPanel.setActiveProjectId(activeProject.getProjectId());
-        }
-        Tab tab = new Tab("AI Chat", chatPanel);
-        workspaceTabs.getTabs().add(tab);
-        workspaceTabs.getSelectionModel().select(tab);
-    }
-
-    public void showEvaluationPanel() {
-        showEvaluationPanel(false);
-    }
-
-    public void showEvaluationPanel(boolean triggerSuggestions) {
-        EvaluationPanel evaluationPanel = new EvaluationPanel();
-        evaluationPanel.setAiCtrl(aiCtrl);
-        DiagramEditorPanel activeEditor = getActiveEditor();
-        if (activeEditor != null && activeEditor.getCurrentDiagram() != null) {
-            evaluationPanel.setActiveDiagramId(activeEditor.getCurrentDiagram().getDiagramId());
-        }
-        Tab tab = new Tab("Evaluation", evaluationPanel);
-        workspaceTabs.getTabs().add(tab);
-        workspaceTabs.getSelectionModel().select(tab);
-        if (triggerSuggestions) {
-            evaluationPanel.onGenerateSuggestions();
-        }
-    }
-
-    public void initialize() {
-        if (dashboardPanel != null) {
-            dashboardPanel.setProjectCtrl(projectCtrl);
-            dashboardPanel.setOpenProjectHandler(this::openProjectWorkspace);
-            dashboardPanel.refreshProjects();
+    /** Refreshes the project explorer after diagrams are created or saved from panels that do not hold a MainWindow reference. */
+    public static void notifyDiagramChanged() {
+        MainWindow w = instance;
+        if (w != null) {
+            Platform.runLater(w::refreshProjectExplorer);
         }
     }
 
     @Override
-    public void start(Stage primaryStage) {
+    public void start(Stage stage) {
+        instance = this;
+        // ── Wire persistence ──────────────────────────────────────────────────
+        DatabaseManager.getInstance().initialize();
+        IProjectRepository    projRepo  = new ProjectRepositoryImpl();
+        IDiagramRepository    diagRepo  = new DiagramRepositoryImpl();
+        IChatRepository       chatRepo  = new ChatRepositoryImpl();
+        IEvaluationRepository evalRepo  = new DesignEvaluationRepositoryImpl();
+        ICodeParser           parser    = new JavaCodeParser();
+        IExportService        exporter  = new DiagramExportService();
+        IAIEngine             ai        = new LLMAPIEngine();
+        ISpeechToTextService  stt       = new SpeechToTextServiceImpl();
+
+        projectCtrl = new ProjectController(projRepo, diagRepo, chatRepo, evalRepo);
+        diagramCtrl = new DiagramController(diagRepo, ai, parser, exporter);
+        aiCtrl      = new AIController(ai, chatRepo, evalRepo, diagRepo);
+
+        // Ensure default project exists
+        if (projectCtrl.getAllProjects().isEmpty())
+            projectCtrl.createProject("My Project", "Default workspace");
+
+        // ── Build panels ──────────────────────────────────────────────────────
+        editorPanel  = new DiagramEditorPanel(diagramCtrl);
+        shapePanel   = new ShapePalettePanel();
+        explorerPanel = new ProjectExplorerPanel(this);
+        chatPanel    = new AIChatPanel(this, stt);
+        toolbarPanel = new ToolbarPanel(this);
+
+        // ── Left sidebar: Shapes (top) + Explorer (bottom) ────────────────────
+        SplitPane leftBar = new SplitPane();
+        leftBar.setOrientation(Orientation.VERTICAL);
+        leftBar.getItems().addAll(shapePanel, explorerPanel);
+        leftBar.setDividerPositions(0.55);
+        leftBar.setPrefWidth(225);
+        leftBar.setMinWidth(170);
+
+        // ── Main 3-col split ─────────────────────────────────────────────────
+        SplitPane mainSplit = new SplitPane(leftBar, editorPanel, chatPanel);
+        mainSplit.setDividerPositions(0.17, 0.80);
+        SplitPane.setResizableWithParent(leftBar,   false);
+        SplitPane.setResizableWithParent(chatPanel, false);
+
+        // ── Root ──────────────────────────────────────────────────────────────
         BorderPane root = new BorderPane();
+        root.getStyleClass().add("root-bg");
+        root.setTop(toolbarPanel);
+        root.setCenter(mainSplit);
+        root.setBottom(buildStatusBar());
 
-        MenuBar menuBar = new MenuBar();
-        Menu fileMenu = new Menu("File");
-        MenuItem newProject = new MenuItem("New Project");
-        MenuItem openProject = new MenuItem("Open Project");
-        MenuItem exit = new MenuItem("Exit");
-        fileMenu.getItems().addAll(newProject, openProject, exit);
-        Menu diagramMenu = new Menu("Diagram");
-        MenuItem generateFromText = new MenuItem("Generate from Text");
-        MenuItem generateFromCode = new MenuItem("Generate from Code");
-        MenuItem uploadImage = new MenuItem("Upload Image");
-        MenuItem export = new MenuItem("Export");
-        diagramMenu.getItems().addAll(generateFromText, generateFromCode, uploadImage, export);
-        Menu aiMenu = new Menu("AI");
-        MenuItem evaluateDesign = new MenuItem("Evaluate Design");
-        MenuItem submitDesignQuestion = new MenuItem("Consult AI");
-        MenuItem generateSuggestions = new MenuItem("Generate Suggestions");
-        aiMenu.getItems().addAll(evaluateDesign, submitDesignQuestion, generateSuggestions);
-        Menu helpMenu = new Menu("Help");
-        menuBar.getMenus().addAll(fileMenu, diagramMenu, aiMenu, helpMenu);
+        // ── Toast overlay ─────────────────────────────────────────────────────
+        toastOverlay = new StackPane();
+        toastOverlay.setPickOnBounds(false);
+        toastOverlay.setAlignment(Pos.BOTTOM_CENTER);
+        StackPane.setMargin(toastOverlay, new Insets(0, 0, 42, 0));
 
-        ToolBar toolBar = new ToolBar();
-        toolBar.getItems().addAll(new Label("Quick Actions"));
+        StackPane sceneRoot = new StackPane(root, toastOverlay);
 
-        TabPane tabPane = new TabPane();
-        this.workspaceTabs = tabPane;
-        this.dashboardPanel = new ProjectDashboardPanel();
-        dashboardPanel.setProjectCtrl(projectCtrl);
-        dashboardPanel.setOpenProjectHandler(this::openProjectWorkspace);
-        dashboardPanel.refreshProjects();
-        Tab dashboard = new Tab("Dashboard", dashboardPanel);
-        dashboard.setClosable(false);
-        tabPane.getTabs().add(dashboard);
+        Scene scene = new Scene(sceneRoot, 1440, 860);
+        try {
+            scene.getStylesheets().add(
+                getClass().getResource("/css/dark-theme.css").toExternalForm());
+        } catch (Exception e) {
+            System.err.println("[MainWindow] dark-theme.css not found: " + e.getMessage());
+        }
+        registerShortcuts(scene);
 
-        newProject.setOnAction(event -> createProject());
-        openProject.setOnAction(event -> openProject());
-        exit.setOnAction(event -> primaryStage.close());
-        generateFromText.setOnAction(event -> handleGenerateFromText(primaryStage));
-        generateFromCode.setOnAction(event -> handleGenerateFromCode(primaryStage));
-        uploadImage.setOnAction(event -> handleUploadImage(primaryStage));
-        export.setOnAction(event -> exportActiveDiagram(primaryStage));
-        evaluateDesign.setOnAction(event -> showEvaluationPanel());
-        submitDesignQuestion.setOnAction(event -> showChatPanel());
-        generateSuggestions.setOnAction(event -> showEvaluationPanel(true));
+        stage.setTitle("UMLytics — AI-Powered Design Intelligence");
+        stage.setScene(scene);
+        stage.setMinWidth(900);
+        stage.setMinHeight(600);
+        stage.show();
 
-        HBox statusBar = new HBox(24);
-        statusBar.getChildren().addAll(
-                new Label("DB: Connected"),
-                new Label("AI: Ready"),
-                new Label("Last saved: -")
-        );
+        refreshProjectExplorer();
+        updateStatusBar();
+    }
 
-        BorderPane topPane = new BorderPane();
-        topPane.setTop(menuBar);
-        topPane.setCenter(toolBar);
+    // ── Status bar ────────────────────────────────────────────────────────────
+    private HBox buildStatusBar() {
+        lbProject = new Label("Project: —");
+        lbDiagram = new Label("Diagram: —");
+        lbNodes   = new Label("Nodes: 0");
+        lbZoom    = new Label("Zoom: 100%");
+        lbSaved   = new Label("Not saved yet");
 
-        root.setTop(topPane);
-        root.setCenter(tabPane);
-        root.setBottom(statusBar);
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
 
-        primaryStage.setTitle("UMLytics — AI-Powered UML Design Intelligence");
-        Scene scene = new Scene(root, 1200, 800);
-        scene.getStylesheets().add(getClass().getResource("/css/drawio-theme.css").toExternalForm());
-        scene.getAccelerators().put(new KeyCodeCombination(KeyCode.N, KeyCombination.CONTROL_DOWN), this::createProject);
-        scene.getAccelerators().put(new KeyCodeCombination(KeyCode.O, KeyCombination.CONTROL_DOWN), this::openProject);
-        scene.getAccelerators().put(new KeyCodeCombination(KeyCode.E, KeyCombination.CONTROL_DOWN), () -> exportActiveDiagram(primaryStage));
-        scene.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
-            if (e.getCode() == KeyCode.S && e.isControlDown() && !e.isAltDown() && !e.isMetaDown()) {
-                if (e.getTarget() instanceof TextInputControl) {
-                    return;
+        HBox bar = new HBox(10, lbProject, sep(), lbDiagram, sep(), lbNodes,
+                            sep(), lbZoom, spacer, sep(), lbSaved);
+        bar.getStyleClass().add("status-bar");
+        bar.setAlignment(Pos.CENTER_LEFT);
+        bar.setPadding(new Insets(3, 12, 3, 12));
+        return bar;
+    }
+
+    private Label sep() {
+        Label l = new Label("|");
+        l.setStyle("-fx-text-fill: #333344; -fx-font-size: 11px;");
+        return l;
+    }
+
+    // ── Toast ─────────────────────────────────────────────────────────────────
+    public static void showToast(String msg) {
+        if (toastOverlay == null) return;
+        Platform.runLater(() -> {
+            Label toast = new Label(msg);
+            toast.getStyleClass().add("toast-label");
+            toastOverlay.getChildren().add(toast);
+            FadeTransition in  = new FadeTransition(Duration.millis(250), toast);
+            in.setFromValue(0); in.setToValue(1); in.play();
+            FadeTransition out = new FadeTransition(Duration.millis(350), toast);
+            out.setFromValue(1); out.setToValue(0);
+            out.setDelay(Duration.seconds(2.2));
+            out.setOnFinished(e -> toastOverlay.getChildren().remove(toast));
+            in.setOnFinished(e -> out.play());
+        });
+    }
+
+    // ── Shortcuts ─────────────────────────────────────────────────────────────
+    private void registerShortcuts(Scene scene) {
+        scene.getAccelerators().put(
+            new KeyCodeCombination(KeyCode.N, KeyCombination.CONTROL_DOWN), this::promptNewProject);
+        scene.getAccelerators().put(
+            new KeyCodeCombination(KeyCode.S, KeyCombination.CONTROL_DOWN),
+            () -> {
+                editorPanel.saveCurrentDiagram();
+                refreshProjectExplorer();
+                onSaved();
+                showToast("Saved ✓");
+            });
+        scene.getAccelerators().put(
+            new KeyCodeCombination(KeyCode.Z, KeyCombination.CONTROL_DOWN), editorPanel::undo);
+        scene.getAccelerators().put(
+            new KeyCodeCombination(KeyCode.Z, KeyCombination.CONTROL_DOWN, KeyCombination.SHIFT_DOWN),
+            editorPanel::redo);
+        scene.getAccelerators().put(
+            new KeyCodeCombination(KeyCode.G, KeyCombination.CONTROL_DOWN),
+            editorPanel::showGenerateFromTextDialog);
+    }
+
+    // ── Public helpers ────────────────────────────────────────────────────────
+    public void promptNewProject() {
+        TextInputDialog dlg = new TextInputDialog("My Project");
+        dlg.setTitle("New Project"); dlg.setHeaderText("Enter project name:");
+        dlg.showAndWait().ifPresent(n -> {
+            if (!n.isBlank()) {
+                try {
+                    Project created = projectCtrl.createProject(n.trim(), "");
+                    setActiveProjectId(created.getProjectId());
+                    refreshProjectExplorer();
+                    showToast("Created: " + n.trim());
+                } catch (ValidationException ex) {
+                    showToast(ex.getMessage());
                 }
-                saveActiveDiagram(primaryStage);
-                e.consume();
             }
         });
-        primaryStage.setScene(scene);
-        primaryStage.show();
     }
 
-    private void openProjectWorkspace(Project project) {
-        if (project == null) {
-            return;
+    public void openDiagram(UMLDiagram d) {
+        if (d != null && d.getProjectId() != null) {
+            setActiveProjectId(d.getProjectId());
         }
-        this.activeProject = projectCtrl.openProject(project.getProjectId());
-        List<UMLDiagram> diagrams = diagramCtrl.listProjectDiagrams(project.getProjectId());
-        if (diagrams.isEmpty()) {
-            UMLDiagram empty = new UMLDiagram();
-            empty.setProjectId(project.getProjectId());
-            empty.setTitle(project.getName() + " Diagram");
-            showDiagramEditor(empty, project.getName());
-            return;
-        }
-        for (UMLDiagram diagram : diagrams) {
-            showDiagramEditor(diagram, project.getName() + ": " + diagram.getTitle());
-        }
-        new Alert(Alert.AlertType.INFORMATION, "Loaded " + diagrams.size() + " diagram(s) for " + project.getName()).show();
+        editorPanel.loadDiagram(d);
+        updateStatusBar();
     }
 
-    private void handleGenerateFromText(Stage owner) {
-        if (!ensureActiveProject()) {
+    /** Starts a blank diagram scoped to the given project (saving will persist under that project). */
+    public void newDiagramForProject(UUID projectId) {
+        if (projectId == null) {
             return;
         }
-        Dialog<String> dialog = new Dialog<>();
-        dialog.initOwner(owner);
-        dialog.setTitle("Generate UML from Text");
-        dialog.setHeaderText("Describe the system design");
-        TextArea area = new TextArea();
-        area.setPromptText("Enter description...");
-        area.setWrapText(true);
-        area.setPrefRowCount(8);
-        dialog.getDialogPane().setContent(area);
-        ButtonType generate = new ButtonType("Generate", ButtonBar.ButtonData.OK_DONE);
-        dialog.getDialogPane().getButtonTypes().addAll(generate, ButtonType.CANCEL);
-        dialog.setResultConverter(buttonType -> buttonType == generate ? area.getText() : null);
-        Optional<String> result = dialog.showAndWait();
-        if (result.isEmpty() || result.get().isBlank()) {
-            return;
+        setActiveProjectId(projectId);
+        editorPanel.newBlankDiagram();
+        UMLDiagram cur = editorPanel.getCurrentDiagram();
+        if (cur != null) {
+            cur.setProjectId(projectId);
         }
-        try {
-            UMLDiagram diagram = diagramCtrl.generateFromText(activeProject.getProjectId(), result.get());
-            showDiagramEditor(diagram, "Generated: " + diagram.getTitle());
-        } catch (Exception e) {
-            new Alert(Alert.AlertType.ERROR, "Generation failed: " + e.getMessage()).show();
-        }
+        updateStatusBar();
+        showToast("New diagram — press Save when ready");
     }
 
-    private void handleGenerateFromCode(Stage owner) {
-        if (!ensureActiveProject()) {
-            return;
+    public void refreshProjectExplorer() {
+        List<Project> all = projectCtrl.getAllProjects();
+        if (activeProjectId == null && !all.isEmpty()) {
+            activeProjectId = all.get(0).getProjectId();
+        } else if (activeProjectId != null && projectCtrl.findProject(activeProjectId) == null) {
+            activeProjectId = all.isEmpty() ? null : all.get(0).getProjectId();
         }
-        FileChooser chooser = new FileChooser();
-        chooser.setTitle("Select Java Source Files");
-        chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Java Files", "*.java"));
-        List<File> files = chooser.showOpenMultipleDialog(owner);
-        if (files == null || files.isEmpty()) {
-            return;
-        }
-        try {
-            UMLDiagram diagram = diagramCtrl.generateFromCode(activeProject.getProjectId(), files);
-            showDiagramEditor(diagram, "Code Import: " + diagram.getTitle());
-        } catch (Exception e) {
-            new Alert(Alert.AlertType.ERROR, "Code parsing failed: " + e.getMessage()).show();
-        }
+        editorPanel.setDefaultProjectIdForNewDiagrams(activeProjectId);
+        explorerPanel.loadWorkspace(all);
+        updateStatusBar();
     }
 
-    private void handleUploadImage(Stage owner) {
-        if (!ensureActiveProject()) {
-            return;
-        }
-        FileChooser chooser = new FileChooser();
-        chooser.setTitle("Select UML Image");
-        chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Images", "*.png", "*.jpg", "*.jpeg"));
-        File file = chooser.showOpenDialog(owner);
-        if (file == null) {
-            return;
-        }
-        try {
-            byte[] data = Files.readAllBytes(file.toPath());
-            DiagramImage image = diagramCtrl.analyzeUploadedImage(activeProject.getProjectId(), data);
-            UMLDiagram diagram = new UMLDiagram();
-            diagram.setProjectId(activeProject.getProjectId());
-            diagram.setTitle("Image Import");
-            showDiagramEditor(diagram, "Image Import: " + (image.getFileName() == null ? "diagram" : image.getFileName()));
-        } catch (Exception e) {
-            new Alert(Alert.AlertType.ERROR, "Image analysis failed: " + e.getMessage()).show();
-        }
+    public void setActiveProjectId(UUID projectId) {
+        this.activeProjectId = projectId;
+        editorPanel.setDefaultProjectIdForNewDiagrams(projectId);
     }
 
-    /**
-     * Persists the diagram in the active editor tab (Ctrl+S), with user feedback.
-     */
-    public void saveActiveDiagram(Stage owner) {
-        DiagramEditorPanel editor = getActiveEditor();
-        if (editor == null) {
-            new Alert(Alert.AlertType.WARNING, "Open a diagram tab first.").show();
-            return;
-        }
-        try {
-            editor.onSaveDiagram();
-            new Alert(Alert.AlertType.INFORMATION, "Diagram saved.").show();
-        } catch (Exception e) {
-            new Alert(Alert.AlertType.ERROR, "Save failed: " + e.getMessage()).show();
-        }
+    public UUID getActiveProjectId() {
+        return activeProjectId;
     }
 
-    private void exportActiveDiagram(Stage owner) {
-        DiagramEditorPanel editor = getActiveEditor();
-        if (editor == null) {
-            new Alert(Alert.AlertType.WARNING, "Open a diagram tab first.").show();
-            return;
-        }
-        UMLDiagram diagram = editor.getCurrentDiagram();
-        if (diagram == null) {
-            new Alert(Alert.AlertType.WARNING, "No diagram to export.").show();
-            return;
-        }
-        ChoiceDialog<ExportFormat> formatDialog = new ChoiceDialog<>(ExportFormat.PNG, FXCollections.observableArrayList(ExportFormat.values()));
-        formatDialog.initOwner(owner);
-        formatDialog.setTitle("Export Diagram");
-        formatDialog.setHeaderText("Choose export format");
-        Optional<ExportFormat> formatResult = formatDialog.showAndWait();
-        if (formatResult.isEmpty()) {
-            return;
-        }
-        ExportFormat format = formatResult.get();
-        FileChooser chooser = new FileChooser();
-        chooser.setTitle("Save Diagram");
-        String ext = format.name().toLowerCase();
-        chooser.setInitialFileName((diagram.getTitle() == null || diagram.getTitle().isBlank() ? "diagram" : diagram.getTitle()) + "." + ext);
-        chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter(format.name() + " files", "*." + ext));
-        File out = chooser.showSaveDialog(owner);
-        if (out == null) {
-            return;
-        }
-        try {
-            if (diagram.getDiagramId() == null) {
-                diagramCtrl.saveDiagram(diagram);
+    public void updateStatusBar() {
+        Platform.runLater(() -> {
+            String projectLabel = "—";
+            if (activeProjectId != null) {
+                Project p = projectCtrl.findProject(activeProjectId);
+                if (p != null) {
+                    projectLabel = p.getName();
+                }
             }
-            diagramCtrl.exportDiagram(diagram.getDiagramId(), format, out.getAbsolutePath());
-            new Alert(Alert.AlertType.INFORMATION, "Exported to: " + out.getAbsolutePath()).show();
-        } catch (Exception e) {
-            new Alert(Alert.AlertType.ERROR, "Export failed: " + e.getMessage()).show();
-        }
+            lbProject.setText("Project: " + projectLabel);
+            lbDiagram.setText("Diagram: " + editorPanel.getCurrentDiagramName());
+            lbNodes.setText("Nodes: " + editorPanel.getNodeCount());
+            lbZoom.setText("Zoom: " + editorPanel.getZoomPercent() + "%");
+        });
     }
 
-    private DiagramEditorPanel getActiveEditor() {
-        Tab selected = workspaceTabs.getSelectionModel().getSelectedItem();
-        if (selected == null) {
-            return null;
-        }
-        if (selected.getContent() instanceof DiagramEditorPanel editor) {
-            return editor;
-        }
-        return null;
+    public void onZoomChanged(int pct) {
+        Platform.runLater(() -> lbZoom.setText("Zoom: " + pct + "%"));
     }
 
-    private boolean ensureActiveProject() {
-        if (activeProject == null) {
-            new Alert(Alert.AlertType.WARNING, "Open a project first from Dashboard.").show();
-            return false;
-        }
-        return true;
+    public void onSaved() {
+        Platform.runLater(() -> lbSaved.setText("Saved " + LocalTime.now().format(TIME_FMT)));
     }
+
+    // ── Accessors ─────────────────────────────────────────────────────────────
+    public ProjectController  getProjectController() { return projectCtrl; }
+    public DiagramController  getDiagramController() { return diagramCtrl; }
+    public AIController       getAIController()      { return aiCtrl; }
+    public DiagramEditorPanel getEditorPanel()       { return editorPanel; }
+    public AIChatPanel        getChatPanel()         { return chatPanel; }
 }

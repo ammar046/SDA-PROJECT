@@ -1,7 +1,9 @@
 package com.umlytics.ui.panels;
 
+import com.umlytics.ui.AppAssets;
 import com.umlytics.ui.MainWindow;
 import javafx.scene.control.*;
+import javafx.scene.image.ImageView;
 import javafx.scene.layout.*;
 import javafx.stage.FileChooser;
 
@@ -74,6 +76,16 @@ public class ToolbarPanel extends ToolBar {
 
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
+
+        var logo = AppAssets.loadBundledLogo();
+        if (logo != null && !logo.isError()) {
+            ImageView brandMark = new ImageView(logo);
+            brandMark.setFitHeight(34);
+            brandMark.setPreserveRatio(true);
+            brandMark.setSmooth(true);
+            brandMark.setPickOnBounds(false);
+            getItems().addAll(brandMark, new Separator());
+        }
 
         getItems().addAll(
             btnNew, btnOpen, btnSave,

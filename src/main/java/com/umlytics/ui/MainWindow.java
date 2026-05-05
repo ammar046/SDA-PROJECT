@@ -15,6 +15,7 @@ import javafx.geometry.*;
 import javafx.scene.*;
 import javafx.scene.control.*;
 import javafx.scene.input.*;
+import javafx.scene.image.Image;
 import javafx.scene.layout.*;
 import javafx.stage.Stage;
 import javafx.util.Duration;
@@ -129,13 +130,23 @@ public class MainWindow extends Application {
         registerShortcuts(scene);
 
         stage.setTitle("UMLytics — AI-Powered Design Intelligence");
+        applyStageIcon(stage);
         stage.setScene(scene);
         stage.setMinWidth(900);
         stage.setMinHeight(600);
         stage.show();
 
+        SplashScreen.attachOver(sceneRoot);
+
         refreshProjectExplorer();
         updateStatusBar();
+    }
+
+    private static void applyStageIcon(Stage stage) {
+        Image icon = AppAssets.loadBundledLogo();
+        if (icon != null && !icon.isError()) {
+            stage.getIcons().add(icon);
+        }
     }
 
     // ── Status bar ────────────────────────────────────────────────────────────

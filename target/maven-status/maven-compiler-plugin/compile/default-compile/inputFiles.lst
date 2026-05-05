@@ -70,6 +70,7 @@ C:\Users\PC\Desktop\Project SDA\src\main\java\com\umlytics\services\RenderEngine
 C:\Users\PC\Desktop\Project SDA\src\main\java\com\umlytics\services\SkeletonResponseNormalizer.java
 C:\Users\PC\Desktop\Project SDA\src\main\java\com\umlytics\services\SpeechToTextServiceImpl.java
 C:\Users\PC\Desktop\Project SDA\src\main\java\com\umlytics\services\STTAPIClient.java
+C:\Users\PC\Desktop\Project SDA\src\main\java\com\umlytics\ui\AppAssets.java
 C:\Users\PC\Desktop\Project SDA\src\main\java\com\umlytics\ui\canvas\ClassNode.java
 C:\Users\PC\Desktop\Project SDA\src\main\java\com\umlytics\ui\canvas\DiagramCanvas.java
 C:\Users\PC\Desktop\Project SDA\src\main\java\com\umlytics\ui\canvas\EditToolBar.java
@@ -85,3 +86,4 @@ C:\Users\PC\Desktop\Project SDA\src\main\java\com\umlytics\ui\panels\ProjectExpl
 C:\Users\PC\Desktop\Project SDA\src\main\java\com\umlytics\ui\panels\ShapePalettePanel.java
 C:\Users\PC\Desktop\Project SDA\src\main\java\com\umlytics\ui\panels\ToolbarPanel.java
 C:\Users\PC\Desktop\Project SDA\src\main\java\com\umlytics\ui\ProjectDashboardPanel.java
+C:\Users\PC\Desktop\Project SDA\src\main\java\com\umlytics\ui\SplashScreen.java

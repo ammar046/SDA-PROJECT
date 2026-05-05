@@ -19,6 +19,7 @@ com\umlytics\ui\canvas\SelectionHandle.class
 com\umlytics\ui\panels\ProjectExplorerPanel$ExplorerCell.class
 com\umlytics\repository\ProjectRepositoryImpl.class
 com\umlytics\enums\ExportFormat.class
+com\umlytics\ui\SplashScreen$2.class
 com\umlytics\enums\SourceType.class
 com\umlytics\exceptions\DiagramValidationWarning.class
 com\umlytics\ui\JavaSyntaxHighlighter.class
@@ -26,6 +27,7 @@ com\umlytics\interfaces\IProjectRepository.class
 com\umlytics\interfaces\ICodeParser.class
 com\umlytics\ui\ChatPanel.class
 com\umlytics\repository\DiagramRepositoryImpl$1.class
+com\umlytics\ui\SplashScreen$TeamMember.class
 com\umlytics\interfaces\IDiagramRepository.class
 com\umlytics\ui\DiagramEditorPanel$1.class
 com\umlytics\ui\panels\ToolbarPanel.class
@@ -52,11 +54,13 @@ com\umlytics\services\LLMAPIEngine$1.class
 com\umlytics\services\JavaParserLib.class
 com\umlytics\domain\InheritanceRelationship.class
 com\umlytics\ui\panels\ShapePalettePanel.class
+com\umlytics\ui\SplashScreen.class
 com\umlytics\Main.class
 com\umlytics\ui\ProjectDashboardPanel.class
 com\umlytics\services\RenderEngine.class
 com\umlytics\controllers\AIController.class
 com\umlytics\repository\DiagramRepositoryImpl.class
+com\umlytics\ui\SplashScreen$1.class
 com\umlytics\controllers\ProjectController.class
 com\umlytics\db\ConnectionPool.class
 com\umlytics\exceptions\HardwareException.class
@@ -71,6 +75,7 @@ com\umlytics\controllers\DiagramController.class
 com\umlytics\exceptions\AIEngineException.class
 com\umlytics\domain\UMLDiagram.class
 com\umlytics\exceptions\DiagramTooSimpleException.class
+com\umlytics\ui\SplashScreen$Particle.class
 com\umlytics\enums\EditType.class
 com\umlytics\interfaces\ISpeechToTextService.class
 com\umlytics\services\AudioCapture.class
@@ -93,6 +98,7 @@ com\umlytics\ui\MainWindow.class
 com\umlytics\interfaces\IAIEngine.class
 com\umlytics\domain\SoftwareDesigner.class
 com\umlytics\repository\ChatRepositoryImpl.class
+com\umlytics\ui\AppAssets.class
 com\umlytics\domain\DiagramEdit$1.class
 com\umlytics\enums\ClassType.class
 com\umlytics\services\LLMAPIEngine.class

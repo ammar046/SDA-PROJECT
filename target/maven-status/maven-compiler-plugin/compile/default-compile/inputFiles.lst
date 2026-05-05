@@ -59,6 +59,7 @@ C:\Users\PC\Desktop\Project SDA\src\main\java\com\umlytics\repository\ChatReposi
 C:\Users\PC\Desktop\Project SDA\src\main\java\com\umlytics\repository\DesignEvaluationRepositoryImpl.java
 C:\Users\PC\Desktop\Project SDA\src\main\java\com\umlytics\repository\DiagramRepositoryImpl.java
 C:\Users\PC\Desktop\Project SDA\src\main\java\com\umlytics\repository\ProjectRepositoryImpl.java
+C:\Users\PC\Desktop\Project SDA\src\main\java\com\umlytics\services\AiDiagramPayload.java
 C:\Users\PC\Desktop\Project SDA\src\main\java\com\umlytics\services\AST.java
 C:\Users\PC\Desktop\Project SDA\src\main\java\com\umlytics\services\AudioCapture.java
 C:\Users\PC\Desktop\Project SDA\src\main\java\com\umlytics\services\DiagramExportService.java
@@ -66,6 +67,7 @@ C:\Users\PC\Desktop\Project SDA\src\main\java\com\umlytics\services\JavaCodePars
 C:\Users\PC\Desktop\Project SDA\src\main\java\com\umlytics\services\JavaParserLib.java
 C:\Users\PC\Desktop\Project SDA\src\main\java\com\umlytics\services\LLMAPIEngine.java
 C:\Users\PC\Desktop\Project SDA\src\main\java\com\umlytics\services\RenderEngine.java
+C:\Users\PC\Desktop\Project SDA\src\main\java\com\umlytics\services\SkeletonResponseNormalizer.java
 C:\Users\PC\Desktop\Project SDA\src\main\java\com\umlytics\services\SpeechToTextServiceImpl.java
 C:\Users\PC\Desktop\Project SDA\src\main\java\com\umlytics\services\STTAPIClient.java
 C:\Users\PC\Desktop\Project SDA\src\main\java\com\umlytics\ui\canvas\ClassNode.java

@@ -91,14 +91,30 @@ public class AIChatPanel extends VBox {
         addBubble("Running design quality evaluation…", SenderType.SYSTEM);
         new Thread(() -> {
             try {
-                java.util.UUID id = facade.getEditorPanel().getCurrentDiagramId();
-                if (id == null) { Platform.runLater(() -> addBubble("No diagram loaded.", SenderType.AI)); return; }
-                var r = facade.getDiagramController().evaluateDesign(id);
-                String msg = "📊 Evaluation Results\nCoupling: " + r.getCouplingScore()
-                    + "\nCohesion: " + r.getCohesionScore()
-                    + "\nSOLID:    " + r.getSolidScore()
-                    + (r.getFeedbackSummary() != null ? "\n\n" + r.getFeedbackSummary() : "");
-                Platform.runLater(() -> addBubble(msg, SenderType.AI));
+                com.umlytics.domain.UMLDiagram d = facade.getEditorPanel().getCurrentDiagram();
+                if (d == null || d.getClasses().size() < 2) {
+                    Platform.runLater(() -> addBubble("Open a diagram with at least 2 classes.", SenderType.AI));
+                    return;
+                }
+                var r = facade.getDiagramController().evaluateDesign(d);
+                StringBuilder msg = new StringBuilder();
+                msg.append("📊 Evaluation Results\nCoupling: ").append(r.getCouplingScore())
+                    .append("\nCohesion: ").append(r.getCohesionScore())
+                    .append("\nSOLID:    ").append(r.getSolidScore());
+                if (r.getFeedbackSummary() != null && !r.getFeedbackSummary().isBlank()) {
+                    msg.append("\n\n").append(r.getFeedbackSummary());
+                }
+                java.util.List<String> sug = r.getSuggestions();
+                if (sug != null && !sug.isEmpty()) {
+                    msg.append("\n");
+                    for (String s : sug) {
+                        if (s != null && !s.isBlank()) {
+                            msg.append("\n• ").append(s);
+                        }
+                    }
+                }
+                String out = msg.toString();
+                Platform.runLater(() -> addBubble(out, SenderType.AI));
             } catch (Exception ex) {
                 Platform.runLater(() -> addBubble("Evaluation failed: " + ex.getMessage(), SenderType.AI));
             }
@@ -109,9 +125,12 @@ public class AIChatPanel extends VBox {
         addBubble("Generating class structure suggestions…", SenderType.SYSTEM);
         new Thread(() -> {
             try {
-                java.util.UUID id = facade.getEditorPanel().getCurrentDiagramId();
-                if (id == null) { Platform.runLater(() -> addBubble("No diagram loaded.", SenderType.AI)); return; }
-                var s = facade.getDiagramController().generateStructureSuggestions(id);
+                com.umlytics.domain.UMLDiagram d = facade.getEditorPanel().getCurrentDiagram();
+                if (d == null || d.getClasses().isEmpty()) {
+                    Platform.runLater(() -> addBubble("No diagram loaded.", SenderType.AI));
+                    return;
+                }
+                var s = facade.getDiagramController().generateStructureSuggestions(d);
                 Platform.runLater(() -> addSkeletonCodeBubble(s.getSkeletonCode()));
             } catch (Exception ex) {
                 Platform.runLater(() -> addBubble("Error: " + ex.getMessage(), SenderType.AI));
@@ -149,7 +168,8 @@ public class AIChatPanel extends VBox {
                     response = "✅ Diagram generated! Check the canvas.";
                 } else {
                     java.util.UUID did = facade.getEditorPanel().getCurrentDiagramId();
-                    var aiMsg = facade.getAIController().submitDesignQuestion(text, pid, did);
+                    com.umlytics.domain.UMLDiagram live = facade.getEditorPanel().getCurrentDiagram();
+                    var aiMsg = facade.getAIController().submitDesignQuestion(text, pid, did, live);
                     response  = aiMsg.getContent();
                 }
                 final String r = response;

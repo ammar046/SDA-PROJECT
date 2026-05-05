@@ -20,8 +20,11 @@ import com.umlytics.interfaces.ICodeParser;
 import com.umlytics.interfaces.IDiagramRepository;
 import com.umlytics.interfaces.IExportService;
 
+import com.umlytics.services.AiDiagramPayload;
+
 import java.io.File;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -68,6 +71,7 @@ public class DiagramController {
         }
         UMLModel model = codeParser.parse(files);
         UMLDiagram diagram = model.toUMLDiagram();
+        diagram.setImportNotes(model.getParseNotes());
         diagram.setProjectId(projectId);
         diagram.setSourceType(SourceType.SOURCE_CODE);
         diagramRepo.save(diagram);
@@ -167,15 +171,26 @@ public class DiagramController {
         if (diagram == null) {
             throw new ValidationException("Diagram not found.");
         }
+        return evaluateDesign(diagram);
+    }
+
+    /**
+     * Evaluates the diagram instance as given (e.g. the live canvas), including unsaved edits.
+     */
+    public DesignEvaluationReport evaluateDesign(UMLDiagram diagram) {
+        if (diagram == null) {
+            throw new ValidationException("Diagram not found.");
+        }
         if (diagram.getClasses().size() < 2) {
             throw new DiagramTooSimpleException("Need at least 2 classes.");
         }
         UMLModel model = new UMLModel();
-        model.setClasses(diagram.getClasses());
-        model.setRelationships(diagram.getRelationships());
+        model.setClasses(new ArrayList<>(diagram.getClasses()));
+        model.setRelationships(new ArrayList<>(diagram.getRelationships()));
+        model.setRawJson(AiDiagramPayload.evaluationPayload(diagram));
         DesignEvaluationReport report = aiEngine.evaluateDesign(model);
         report.setReportId(UUID.randomUUID());
-        report.setDiagramId(diagramId);
+        report.setDiagramId(diagram.getDiagramId());
         report.setProjectId(diagram.getProjectId());
         report.setEvaluationDate(LocalDateTime.now());
         return report;
@@ -190,14 +205,22 @@ public class DiagramController {
         if (diagram == null || diagram.getClasses().isEmpty()) {
             throw new EmptyDiagramException("No classes defined.");
         }
+        return generateStructureSuggestions(diagram);
+    }
+
+    /** Java skeletons from the in-memory diagram (matches the open canvas, including unsaved edits). */
+    public ClassSuggestion generateStructureSuggestions(UMLDiagram diagram) {
+        if (diagram == null || diagram.getClasses().isEmpty()) {
+            throw new EmptyDiagramException("No classes defined.");
+        }
         UMLModel model = new UMLModel();
-        model.setClasses(diagram.getClasses());
-        model.setRelationships(diagram.getRelationships());
+        model.setClasses(new ArrayList<>(diagram.getClasses()));
+        model.setRelationships(new ArrayList<>(diagram.getRelationships()));
         String skeleton = aiEngine.generateStructure(model);
         ClassSuggestion suggestion = new ClassSuggestion();
         suggestion.setSuggestionId(UUID.randomUUID());
-        suggestion.setDiagramId(diagramId);
-        suggestion.setSkeletonCode(ClassSuggestion.combineSkeletonResponse(skeleton));
+        suggestion.setDiagramId(diagram.getDiagramId());
+        suggestion.setSkeletonCode(ClassSuggestion.combineSkeletonResponse(skeleton, AiDiagramPayload.classNameSet(model)));
         suggestion.setAccepted(false);
         return suggestion;
     }

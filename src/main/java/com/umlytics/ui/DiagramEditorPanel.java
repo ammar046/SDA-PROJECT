@@ -25,8 +25,11 @@ import javafx.geometry.Point2D;
 import javafx.geometry.Pos;
 import javafx.scene.Cursor;
 import javafx.scene.Node;
+import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
+import javafx.scene.control.ButtonType;
 import javafx.scene.control.ComboBox;
+import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
 import javafx.scene.control.SplitPane;
 import javafx.scene.control.TextField;
@@ -42,6 +45,7 @@ import javafx.scene.layout.Background;
 import javafx.scene.layout.BackgroundFill;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.CornerRadii;
+import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Pane;
 import javafx.scene.layout.StackPane;
@@ -125,7 +129,7 @@ public class DiagramEditorPanel extends BorderPane {
         selectionBox.setVisible(false);
         selectionBox.setManaged(false);
         this.relationshipPreview = new Line();
-        relationshipPreview.setStroke(Color.web("#1a73e8"));
+        relationshipPreview.setStroke(RelationshipEdge.DEFAULT_EDGE_STROKE);
         relationshipPreview.getStrokeDashArray().setAll(6.0, 4.0);
         relationshipPreview.setStrokeWidth(1.5);
         relationshipPreview.setMouseTransparent(true);
@@ -221,6 +225,7 @@ public class DiagramEditorPanel extends BorderPane {
                 addVisualRelationship(relationship.getSource(), relationship.getTarget(), relationship.getType(), relationship);
             }
         }
+        ensureDiagramOverlayZOrder();
         canvas.redraw();
         refreshMiniMap();
         
@@ -362,6 +367,7 @@ public class DiagramEditorPanel extends BorderPane {
         nodeMap.put(umlClass, node);
         canvasLayer.getChildren().add(node);
         updateSelectionHandles(umlClass);
+        ensureDiagramOverlayZOrder();
     }
 
     private void addVisualRelationship(ConceptualClass source, ConceptualClass target, RelationshipType type, Relationship existingRelationship) {
@@ -401,15 +407,45 @@ public class DiagramEditorPanel extends BorderPane {
                 }
                 javafx.scene.control.Menu cardMenu = new javafx.scene.control.Menu("Change Cardinality");
                 String[][] cards = {{"1", "1"}, {"1", "*"}, {"*", "*"}, {"0..1", "1"}, {"0..1", "*"}, {"1..*", "1..*"}};
-                for (String[] c : cards) {
-                    javafx.scene.control.MenuItem item = new javafx.scene.control.MenuItem(c[0] + " to " + c[1]);
+                for (String[] cardPair : cards) {
+                    final String srcM = cardPair[0];
+                    final String tgtM = cardPair[1];
+                    javafx.scene.control.MenuItem item = new javafx.scene.control.MenuItem(srcM + " → " + tgtM);
                     item.setOnAction(e -> {
-                        applyEdgeState(edge, edge.getRelationshipType(), edge.getMiddleLabel(), c[0], c[1],
+                        applyEdgeState(edge, edge.getRelationshipType(), edge.getMiddleLabel(), srcM, tgtM,
                                 edge.isDashed(), colorNameFromColor(edge.getStrokeColor()), edge.getBendX());
                         showEdgeFormatControls(edge);
                     });
                     cardMenu.getItems().add(item);
                 }
+                javafx.scene.control.MenuItem customCard = new javafx.scene.control.MenuItem("Custom cardinality…");
+                customCard.setOnAction(e -> {
+                    Dialog<ButtonType> dlg = new Dialog<>();
+                    dlg.setTitle("Custom Cardinality");
+                    dlg.setHeaderText("Source and target multiplicity (UML style: 1, *, 0..1, 1..*, n..m, etc.)");
+                    dlg.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+                    GridPane grid = new GridPane();
+                    grid.setHgap(8);
+                    grid.setVgap(10);
+                    TextField srcField = new TextField(edge.getSourceMultiplicity() == null ? "" : edge.getSourceMultiplicity());
+                    TextField tgtField = new TextField(edge.getTargetMultiplicity() == null ? "" : edge.getTargetMultiplicity());
+                    grid.addRow(0, new Label("Source:"), srcField);
+                    grid.addRow(1, new Label("Target:"), tgtField);
+                    dlg.getDialogPane().setContent(grid);
+                    dlg.showAndWait().filter(r -> r == ButtonType.OK).ifPresent(r -> {
+                        String srcCard = srcField.getText() == null ? "" : srcField.getText().trim();
+                        String tgtCard = tgtField.getText() == null ? "" : tgtField.getText().trim();
+                        if (srcCard.isEmpty() || tgtCard.isEmpty()) {
+                            new Alert(Alert.AlertType.WARNING, "Both source and target cardinality must be non-empty.", ButtonType.OK).showAndWait();
+                            return;
+                        }
+                        applyEdgeState(edge, edge.getRelationshipType(), edge.getMiddleLabel(), srcCard, tgtCard,
+                                edge.isDashed(), colorNameFromColor(edge.getStrokeColor()), edge.getBendX());
+                        showEdgeFormatControls(edge);
+                    });
+                });
+                cardMenu.getItems().add(new javafx.scene.control.SeparatorMenuItem());
+                cardMenu.getItems().add(customCard);
                 contextMenu.getItems().addAll(typeMenu, cardMenu);
                 contextMenu.show(canvasLayer, event.getScreenX(), event.getScreenY());
             }
@@ -446,8 +482,23 @@ public class DiagramEditorPanel extends BorderPane {
             undoStack.push(edit);
             redoStack.clear();
         }
-        canvasLayer.getChildren().add(1, edge);
+        canvasLayer.getChildren().add(edge);
+        ensureDiagramOverlayZOrder();
         refreshMiniMap();
+    }
+
+    /** Edges and guides draw above class boxes so arrowheads and cardinality stay visible. */
+    private void ensureDiagramOverlayZOrder() {
+        for (RelationshipEdge e : links.keySet()) {
+            e.toFront();
+        }
+        for (List<SelectionHandle> list : handlesMap.values()) {
+            for (SelectionHandle h : list) {
+                h.toFront();
+            }
+        }
+        relationshipPreview.toFront();
+        selectionBox.toFront();
     }
 
     private void undo_internal() {
@@ -1317,6 +1368,8 @@ public class DiagramEditorPanel extends BorderPane {
         TextField labelField = new TextField(edge.getMiddleLabel());
         TextField sourceMult = new TextField(edge.getSourceMultiplicity() == null ? "1" : edge.getSourceMultiplicity());
         TextField targetMult = new TextField(edge.getTargetMultiplicity() == null ? "*" : edge.getTargetMultiplicity());
+        sourceMult.setPromptText("e.g. 1, *, 0..1, 1..*");
+        targetMult.setPromptText("e.g. 1, *, 0..1, 1..*");
         ComboBox<RelationshipType> relationshipTypeBox = new ComboBox<>();
         relationshipTypeBox.getItems().addAll(RelationshipType.values());
         relationshipTypeBox.setValue(edge.getRelationshipType());
@@ -1324,7 +1377,7 @@ public class DiagramEditorPanel extends BorderPane {
         lineStyleBox.getItems().addAll("Solid", "Dashed");
         lineStyleBox.setValue(edge.isDashed() ? "Dashed" : "Solid");
         ComboBox<String> colorBox = new ComboBox<>();
-        colorBox.getItems().addAll("Black", "Blue", "Red", "Green");
+        colorBox.getItems().addAll("Purple", "Ink", "Blue", "Red", "Green");
         colorBox.setValue(colorNameFromColor(edge.getStrokeColor()));
         
         relationshipTypeBox.setOnAction(e -> {
@@ -1354,7 +1407,16 @@ public class DiagramEditorPanel extends BorderPane {
             undoStack.push(edit);
             redoStack.clear();
         });
-        VBox box = new VBox(6, new Label("Connection"), relationshipTypeBox, labelField, sourceMult, targetMult, lineStyleBox, colorBox, apply);
+        VBox box = new VBox(6,
+                new Label("Connection"),
+                relationshipTypeBox,
+                labelField,
+                new Label("Cardinality (source → target)"),
+                sourceMult,
+                targetMult,
+                lineStyleBox,
+                colorBox,
+                apply);
         rightFormatPanel.getChildren().setAll(new TitledPane("Connection", box));
     }
 
@@ -1560,20 +1622,26 @@ public class DiagramEditorPanel extends BorderPane {
     }
 
     private Color parseEdgeColor(String color) {
-        if (color == null) {
-            return Color.BLACK;
+        if (color == null || color.isBlank()) {
+            return RelationshipEdge.DEFAULT_EDGE_STROKE;
         }
         return switch (color) {
+            case "Purple" -> RelationshipEdge.DEFAULT_EDGE_STROKE;
             case "Blue" -> Color.web("#1a73e8");
             case "Red" -> Color.web("#d93025");
             case "Green" -> Color.web("#188038");
-            default -> Color.BLACK;
+            case "Ink" -> Color.BLACK;
+            case "Black" -> RelationshipEdge.DEFAULT_EDGE_STROKE;
+            default -> RelationshipEdge.DEFAULT_EDGE_STROKE;
         };
     }
 
     private String colorNameFromColor(Color color) {
         if (color == null) {
-            return "Black";
+            return "Purple";
+        }
+        if (RelationshipEdge.DEFAULT_EDGE_STROKE.equals(color)) {
+            return "Purple";
         }
         if (Color.web("#1a73e8").equals(color)) {
             return "Blue";
@@ -1584,7 +1652,10 @@ public class DiagramEditorPanel extends BorderPane {
         if (Color.web("#188038").equals(color)) {
             return "Green";
         }
-        return "Black";
+        if (Color.BLACK.equals(color)) {
+            return "Ink";
+        }
+        return "Purple";
     }
 
     private Color parseClassHeaderColor(String color) {
@@ -2177,7 +2248,7 @@ public class DiagramEditorPanel extends BorderPane {
                 } catch (Exception ex) {
                     javafx.application.Platform.runLater(() -> {
                         statusHintLabel.setText("ready");
-                        MainWindow.showToast("Image analysis failed: " + ex.getMessage());
+                        MainWindow.showErrorToast(ex);
                     });
                 }
             }, "image-analyze-thread").start();

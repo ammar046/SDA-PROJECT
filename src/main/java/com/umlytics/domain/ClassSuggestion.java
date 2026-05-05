@@ -1,42 +1,59 @@
 package com.umlytics.domain;
 
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
+import com.umlytics.services.SkeletonResponseNormalizer;
 
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 public class ClassSuggestion {
     /**
      * Turns AI JSON {@code {"skeletons":{"ClassName":"java source..."}}} into plain Java text for copy-paste.
-     * If the response is not that shape, returns the trimmed string unchanged.
+     * When {@code allowedClassNames} is non-empty, drops skeleton keys not in the diagram.
      */
     public static String combineSkeletonResponse(String response) {
+        return combineSkeletonResponse(response, null);
+    }
+
+    public static String combineSkeletonResponse(String response, Set<String> allowedClassNames) {
         if (response == null) {
             return "";
         }
         String trimmed = response.trim();
-        if (trimmed.isEmpty() || !trimmed.startsWith("{")) {
+        if (trimmed.isEmpty()) {
+            return "";
+        }
+        if (!trimmed.startsWith("{")) {
             return trimmed;
         }
         try {
-            JsonObject parsed = JsonParser.parseString(trimmed).getAsJsonObject();
-            if (parsed.has("skeletons")) {
-                JsonObject skeletons = parsed.getAsJsonObject("skeletons");
-                StringBuilder combined = new StringBuilder();
-                for (String key : skeletons.keySet()) {
-                    if (!skeletons.get(key).isJsonPrimitive()) {
-                        continue;
-                    }
-                    combined.append("// === ").append(key).append(" ===\n");
-                    combined.append(skeletons.get(key).getAsString()).append("\n\n");
-                }
-                return combined.toString().trim();
+            String normalized = SkeletonResponseNormalizer.toCleanSkeletonsJson(trimmed);
+            if (allowedClassNames != null && !allowedClassNames.isEmpty()) {
+                normalized = SkeletonResponseNormalizer.filterSkeletonKeys(normalized, allowedClassNames);
             }
-        } catch (Exception ignored) {
-            // fall through
+            Map<String, String> map = SkeletonResponseNormalizer.skeletonsToMap(normalized);
+            if (map.isEmpty()) {
+                return "// No valid Java skeletons parsed. Try Generate again or adjust the model.\n"
+                        + "// Raw (truncated):\n// "
+                        + trimmed.substring(0, Math.min(800, trimmed.length())).replace("\n", "\n// ");
+            }
+            StringBuilder combined = new StringBuilder();
+            for (Map.Entry<String, String> e : map.entrySet()) {
+                combined.append("// === ").append(e.getKey()).append(" ===\n");
+                combined.append(e.getValue()).append("\n\n");
+            }
+            if (allowedClassNames != null && !allowedClassNames.isEmpty()) {
+                for (String need : allowedClassNames) {
+                    if (!map.containsKey(need)) {
+                        combined.append("// === (missing) ").append(need).append(" ===\n");
+                        combined.append("// The model did not return Java for this class.\n\n");
+                    }
+                }
+            }
+            return combined.toString().trim();
+        } catch (Exception e) {
+            return trimmed;
         }
-        return trimmed;
     }
 
     private UUID suggestionId;
@@ -98,7 +115,21 @@ public class ClassSuggestion {
     }
 
     public Map<String, String> getSkeletons() {
-        return Map.of("Generated", skeletonCode == null ? "" : skeletonCode);
+        if (skeletonCode == null || skeletonCode.isBlank()) {
+            return Map.of();
+        }
+        if (skeletonCode.trim().startsWith("{")) {
+            try {
+                Map<String, String> m = SkeletonResponseNormalizer.skeletonsToMap(
+                        SkeletonResponseNormalizer.toCleanSkeletonsJson(skeletonCode.trim()));
+                if (!m.isEmpty()) {
+                    return m;
+                }
+            } catch (Exception ignored) {
+                // fall through
+            }
+        }
+        return Map.of("Generated", skeletonCode);
     }
 
     public void setCodeSkeletons(Map<String, String> skeletons) {

@@ -22,6 +22,7 @@ import com.umlytics.enums.Visibility;
 import com.umlytics.exceptions.AIEngineException;
 import com.umlytics.interfaces.IAIEngine;
 
+import okhttp3.HttpUrl;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -69,13 +70,14 @@ public class LLMAPIEngine implements IAIEngine {
 
     /** Must NOT reuse SYSTEM_UML_JSON — that asks for diagram JSON and breaks Java skeleton generation. */
     private static final String SYSTEM_JAVA_SKELETON_JSON = """
-            You output compilable Java 17 skeleton code wrapped in JSON only. Reply with a single JSON object, no markdown fences.
-            Schema: {"skeletons":{"ExactClassOrInterfaceName":"full Java source as one JSON string value"}}
-            Rules:
-            - Keys in "skeletons" must match the class/interface/enum names from the user's UML model (exact spelling).
-            - Each value is complete Java for that type: optional package; imports if needed; fields and method signatures/stubs matching attributes and methods given.
-            - Use appropriate modifiers (public/private, abstract for abstract types and interface methods). Empty method bodies may use "throw new UnsupportedOperationException();" or "{}" as appropriate.
-            - Do not include explanations, suggestions in prose, or any text outside the JSON object.""";
+            You output compilable Java 17 skeleton code wrapped in JSON only. Reply with a single flat JSON object, no markdown fences.
+            Shape: {"skeletons":{"ClassName":"MULTI-LINE JAVA SOURCE STRING"}}
+            Critical rules:
+            - Keys in "skeletons" must be EXACTLY the class/interface/enum names listed in the user message — no extra types, no renamed types.
+            - Each value is ONE string containing real Java source. The first lines must be valid Java: optional `package ...;` lines, then `import ...;` lines, then `public class|interface|enum`.
+            - NEVER put JSON objects, JSON maps, or pseudo-structures like {"package":"..."} inside a value. NEVER use a top-level "type":"object" wrapper around skeletons.
+            - Match fields and method signatures to the UML attributes and methods from the user JSON.
+            - Do not include explanations outside the JSON object.""";
 
     /** Chat / design Q&A — never use SYSTEM_UML_JSON here or the model returns diagram JSON for every question. */
     private static final String SYSTEM_DESIGN_CONSULT = """
@@ -104,6 +106,12 @@ public class LLMAPIEngine implements IAIEngine {
     private final String visionModel;
     /** Optional fixed seed for evaluation reproducibility (OpenAI-compatible). */
     private final Integer evalSeed;
+    /** Google Gemini (Generative Language API) — set ai.provider=gemini or only configure a Gemini key. */
+    private final String geminiApiKey;
+    private final String geminiModel;
+    /** Optional; when set, used for multimodal image analysis (defaults to {@link #geminiModel}). */
+    private final String geminiVisionModel;
+    private final boolean useGemini;
 
     public LLMAPIEngine() {
         Properties props = loadProps();
@@ -114,6 +122,25 @@ public class LLMAPIEngine implements IAIEngine {
         this.visionApiKey = trimOrEmpty(props.getProperty("ai.vision.api.key"));
         this.visionModel = trimOrEmpty(props.getProperty("ai.vision.model"));
         this.evalSeed = parseIntOrNull(trimOrEmpty(props.getProperty("ai.eval.seed")));
+        String gemini = trimOrEmpty(props.getProperty("ai.gemini.api.key"));
+        if (gemini.isEmpty()) {
+            gemini = trimOrEmpty(System.getenv("GEMINI_API_KEY"));
+        }
+        this.geminiApiKey = gemini;
+        String gModel = trimOrEmpty(props.getProperty("ai.gemini.model"));
+        this.geminiModel = normalizeGeminiModelId(gModel.isEmpty() ? "gemini-2.0-flash" : gModel);
+        String gv = trimOrEmpty(props.getProperty("ai.gemini.vision.model"));
+        this.geminiVisionModel = gv.isEmpty() ? "" : normalizeGeminiModelId(gv);
+        String provider = trimOrEmpty(props.getProperty("ai.provider", "")).toLowerCase();
+        boolean openAiReady = openAiCredentialsLookValid(this.apiKey);
+        this.useGemini = ("gemini".equals(provider) && !this.geminiApiKey.isEmpty())
+                || (!this.geminiApiKey.isEmpty() && !openAiReady);
+    }
+
+    private static boolean openAiCredentialsLookValid(String key) {
+        return !key.isEmpty()
+                && !key.equalsIgnoreCase("YOUR_API_KEY_HERE")
+                && !key.startsWith("${");
     }
 
     private static Integer parseIntOrNull(String s) {
@@ -161,16 +188,45 @@ public class LLMAPIEngine implements IAIEngine {
         return s == null ? "" : s.trim();
     }
 
+    /** Strips accidental "models/" prefix from console copy-paste. */
+    private static String normalizeGeminiModelId(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return "gemini-2.0-flash";
+        }
+        String t = raw.trim();
+        if (t.toLowerCase().startsWith("models/")) {
+            t = t.substring("models/".length()).trim();
+        }
+        return t.isEmpty() ? "gemini-2.0-flash" : t;
+    }
+
     private boolean apiConfigured() {
-        return !apiKey.isEmpty()
-                && !apiKey.equalsIgnoreCase("YOUR_API_KEY_HERE")
-                && !apiKey.startsWith("${");
+        if (useGemini) {
+            return geminiCredentialsLookValid();
+        }
+        return openAiCredentialsLookValid(apiKey);
+    }
+
+    private boolean geminiCredentialsLookValid() {
+        return !geminiApiKey.isEmpty()
+                && !geminiApiKey.equalsIgnoreCase("YOUR_GEMINI_API_KEY_HERE")
+                && !geminiApiKey.startsWith("${");
+    }
+
+    /** Gemini key present (may be used for image analysis even when primary provider is OpenAI/Cerebras). */
+    private boolean canUseGeminiVision() {
+        return geminiCredentialsLookValid();
+    }
+
+    private String geminiModelForVision() {
+        return geminiVisionModel.isEmpty() ? geminiModel : geminiVisionModel;
     }
 
     private void requireApi() {
         if (!apiConfigured()) {
             throw new AIEngineException(
-                    "AI is not configured. Set ai.api.key (and optionally ai.api.endpoint, ai.api.model) in config.properties on the classpath.",
+                    "AI is not configured. Set ai.api.key for OpenAI-compatible APIs, or ai.gemini.api.key (or GEMINI_API_KEY) "
+                            + "with ai.provider=gemini in config.properties.",
                     null);
         }
     }
@@ -189,20 +245,27 @@ public class LLMAPIEngine implements IAIEngine {
     @Override
     public DesignEvaluationReport evaluateDesign(UMLModel m) {
         requireApi();
-        String payload = m.getRawJson() != null ? m.getRawJson() : summarizeModelAsJson(m);
-        // Many providers cap total context at ~8192 tokens; keep diagram payload conservative.
-        payload = truncate(payload, 6_000);
+        String payload = m.getRawJson() != null ? m.getRawJson() : AiDiagramPayload.summarizeModelAsJson(m);
+        // Leave room for class list + prompt; large diagrams may truncate — names list is repeated up front.
+        payload = truncate(payload, 10_000);
+        String allowed = AiDiagramPayload.allowedNamesForPrompt(m);
         // Do not show example scores of 0 — models often copy them literally.
         String user = """
-                Evaluate this UML class-diagram model for coupling (lower is better), cohesion (higher is better), and SOLID alignment (higher is better).
+                Allowed UML type names (from this diagram only). Your "summary" and EVERY item in "suggestions" MUST cite at least one of these names (exact spelling):
+                """ + allowed + """
 
-                Respond with ONE JSON object only. Each score must be a decimal between 1.0 and 10.0 (never all zeros; use realistic values based on the diagram).
-                Required keys: "couplingScore", "cohesionScore", "solidScore", "suggestions" (array of short strings), "summary" (2–5 sentences).
+                The JSON below is the ONLY model to grade. Do not invent classes (e.g. from other projects). Do not substitute a generic system.
+
+                Evaluate coupling (lower is better), cohesion (higher is better), and SOLID alignment (higher is better).
+
+                Respond with ONE flat JSON object only (no JSON Schema "type"/"properties" wrapper).
+                Keys required: "couplingScore", "cohesionScore", "solidScore", "suggestions" (array of short strings), "summary" (2–5 sentences).
+                Scores: decimals 1.0–10.0, justified by this diagram.
 
                 Diagram JSON:
                 """ + payload;
         String content = callEvaluationChat(user);
-        return parseEvaluationJson(content);
+        return parseEvaluationJson(content, m);
     }
 
     @Override
@@ -211,7 +274,7 @@ public class LLMAPIEngine implements IAIEngine {
             return "";
         }
         if (!apiConfigured()) {
-            return "Offline: configure ai.api.key in config.properties for AI answers. You asked: " + q.trim();
+            return "Offline: configure ai.api.key or ai.gemini.api.key in config.properties for AI answers. You asked: " + q.trim();
         }
         String userPayload = buildConsultUserPayload(q.trim(), ctx);
         return callConsultChat(userPayload);
@@ -235,7 +298,7 @@ public class LLMAPIEngine implements IAIEngine {
             m.setRelationships(new ArrayList<>(d.getRelationships()));
             sb.append("Current diagram title: ").append(d.getTitle() != null ? d.getTitle() : "(untitled)").append("\n");
             sb.append("UML summary (JSON — use only to understand the design, do not echo it as your answer):\n");
-            sb.append(truncate(summarizeModelAsJson(m), MAX_CONSULT_DIAGRAM_JSON));
+            sb.append(truncate(AiDiagramPayload.summarizeModelAsJson(m), MAX_CONSULT_DIAGRAM_JSON));
             sb.append("\n\n");
         } else {
             sb.append("(No diagram is open — answer from general software design knowledge.)\n\n");
@@ -297,20 +360,24 @@ public class LLMAPIEngine implements IAIEngine {
     @Override
     public String generateStructure(UMLModel m) {
         if (!apiConfigured()) {
-            return "{\"skeletons\":{\"Note\":\"Set ai.api.key in config.properties\"}}";
+            return "{\"skeletons\":{\"Note\":\"Set ai.api.key or ai.gemini.api.key in config.properties\"}}";
         }
-        String modelJson = truncate(summarizeModelAsJson(m), 4_500);
+        List<String> names = AiDiagramPayload.classNames(m);
+        String exactKeys = names.isEmpty() ? "(none)" : String.join(", ", names);
+        String modelJson = truncate(AiDiagramPayload.summarizeModelAsJson(m), 4_200);
         String user = """
-                Below is the UML class diagram as JSON (classes with attributes and methods; relationships between classes).
-                Generate Java 17 source skeletons: one entry in "skeletons" per class/interface/enum, keys equal to type names.
+                Output "skeletons" ONLY for these exact type names (spelling must match). One key per name, no extras:
+                """ + exactKeys + """
+
+                The model JSON below is the ONLY truth for attributes, methods, and relationships.
 
                 Model JSON:
                 """ + modelJson;
         String raw = callJavaSkeletonChat(user);
-        if (raw != null && raw.trim().startsWith("{")) {
-            return raw.trim();
+        if (raw == null || raw.isBlank()) {
+            return "{\"skeletons\":{}}";
         }
-        return "{\"skeletons\":{\"Generated\":\"" + escapeJson(raw) + "\"}}";
+        return SkeletonResponseNormalizer.toCleanSkeletonsJson(raw);
     }
 
     @Override
@@ -318,88 +385,171 @@ public class LLMAPIEngine implements IAIEngine {
         if (data == null || data.length == 0) {
             throw new AIEngineException("Uploaded image data is empty.", null);
         }
-        requireApi();
-        byte[] imagePayload = compressDiagramImage(data);
+        byte[] imagePayload = prepareDiagramImageForVision(data);
+        String mime = detectImageMime(imagePayload);
+
+        AIEngineException geminiFailure = null;
+        // Prefer Gemini whenever a key is set — works for Cerebras/text-only mains and avoids "needs vision" dead ends.
+        if (canUseGeminiVision()) {
+            try {
+                return parseUmlModelFromJson(analyzeImageWithGeminiNative(imagePayload, mime));
+            } catch (AIEngineException e) {
+                geminiFailure = e;
+                if (useGemini) {
+                    throw new AIEngineException(
+                            "Gemini image analysis failed. Check ai.gemini.api.key (or environment GEMINI_API_KEY) in "
+                                    + "config.properties next to pom.xml. Try ai.gemini.model=gemini-2.0-flash or "
+                                    + "ai.gemini.vision.model=gemini-2.0-flash. Detail: "
+                                    + e.getMessage(),
+                            e.getCause());
+                }
+            }
+        }
+
+        if (!apiConfigured()) {
+            if (geminiFailure != null) {
+                throw geminiFailure;
+            }
+            throw new AIEngineException(visionSetupHint(null), null);
+        }
+
         String user = "Analyze this UML class diagram image. Extract classes (with attributes and methods if visible) and relationships. "
                 + "Use the JSON schema from your instructions.";
         try {
-            String content = callChatCompletionsVision(user, imagePayload);
-            return parseUmlModelFromJson(content);
+            return parseUmlModelFromJson(callChatCompletionsVision(user, imagePayload));
         } catch (AIEngineException ex) {
-            boolean hasDedicatedVision = !visionEndpoint.isEmpty() || !visionApiKey.isEmpty();
-            if (!hasDedicatedVision && isCerebrasEndpoint()) {
+            if (geminiFailure != null) {
                 throw new AIEngineException(
-                        "Image analysis needs a vision-capable API. Options: (1) Add ai.vision.endpoint=https://api.openai.com/v1/chat/completions "
-                                + "with ai.vision.api.key and ai.vision.model=gpt-4o-mini (or gpt-4o), or (2) switch ai.api to a provider that supports "
-                                + "image_url in chat. Underlying error: " + ex.getMessage(),
+                        visionSetupHint(ex) + " Gemini attempt: " + geminiFailure.getMessage(),
                         ex);
             }
-            throw ex;
+            throw new AIEngineException(visionSetupHint(ex), ex);
         }
     }
 
-    /** Compact but complete JSON for AI prompts (evaluation fallback and Java generation). */
-    private static String summarizeModelAsJson(UMLModel m) {
-        JsonObject root = new JsonObject();
-        JsonArray clsArr = new JsonArray();
-        if (m.getClasses() != null) {
-            for (ConceptualClass c : m.getClasses()) {
-                JsonObject jc = new JsonObject();
-                jc.addProperty("name", c.getName() != null ? c.getName() : "Unnamed");
-                jc.addProperty("kind", classKindLabel(c));
-                JsonArray attrs = new JsonArray();
-                for (Attribute a : c.getAttributes()) {
-                    JsonObject ja = new JsonObject();
-                    ja.addProperty("name", a.getName() != null ? a.getName() : "field");
-                    ja.addProperty("type", a.getType() != null ? a.getType() : "Object");
-                    ja.addProperty("visibility", a.getVisibility() != null ? a.getVisibility().name() : "PRIVATE");
-                    ja.addProperty("static", a.isStatic());
-                    attrs.add(ja);
-                }
-                jc.add("attributes", attrs);
-                JsonArray meths = new JsonArray();
-                for (Method met : c.getMethods()) {
-                    JsonObject jm = new JsonObject();
-                    jm.addProperty("name", met.getName() != null ? met.getName() : "method");
-                    jm.addProperty("returnType", met.getReturnType() != null ? met.getReturnType() : "void");
-                    jm.addProperty("parameters", met.getParameters() != null ? met.getParameters() : "");
-                    jm.addProperty("visibility", met.getVisibility() != null ? met.getVisibility().name() : "PUBLIC");
-                    jm.addProperty("abstract", met.isAbstract());
-                    meths.add(jm);
-                }
-                jc.add("methods", meths);
-                clsArr.add(jc);
+    private static String visionSetupHint(AIEngineException underlying) {
+        String tail = "";
+        if (underlying != null && underlying.getMessage() != null) {
+            String one = underlying.getMessage().replace('\r', ' ').replace('\n', ' ').trim();
+            if (one.length() > 100) {
+                one = one.substring(0, 100) + "…";
             }
+            tail = " [" + one + "]";
         }
-        root.add("classes", clsArr);
-        JsonArray relArr = new JsonArray();
-        if (m.getRelationships() != null) {
-            for (Relationship r : m.getRelationships()) {
-                if (r.getSource() == null || r.getTarget() == null) {
-                    continue;
-                }
-                JsonObject jr = new JsonObject();
-                jr.addProperty("from", r.getSource().getName());
-                jr.addProperty("to", r.getTarget().getName());
-                jr.addProperty("type", r.getType().name());
-                relArr.add(jr);
-            }
-        }
-        root.add("relationships", relArr);
-        return root.toString();
+        return "Image analysis needs a multimodal API — set ai.gemini.api.key (or GEMINI_API_KEY) in config.properties beside pom.xml, "
+                + "or ai.vision.* with gpt-4o. Full error is printed in the console." + tail;
     }
 
-    private static String classKindLabel(ConceptualClass c) {
-        if (c.isInterface()) {
-            return "interface";
+    /**
+     * Native Gemini multimodal request (avoids OpenAI-shaped conversion issues) with JSON output for UML parsing.
+     */
+    private String analyzeImageWithGeminiNative(byte[] imageBytes, String mime) {
+        String b64 = Base64.getEncoder().encodeToString(imageBytes);
+        if (b64.length() > 6_000_000) {
+            imageBytes = prepareDiagramImageForVision(imageBytes);
+            mime = detectImageMime(imageBytes);
+            b64 = Base64.getEncoder().encodeToString(imageBytes);
         }
-        if (c.isAbstract()) {
-            return "abstract_class";
+
+        JsonObject bodyJsonMode = buildGeminiVisionRequestBody(b64, mime, true);
+        try {
+            return executeGeminiGenerateContent(geminiModelForVision(), bodyJsonMode);
+        } catch (AIEngineException first) {
+            if (!geminiVisionRetryWithoutJsonMode(first)) {
+                throw first;
+            }
+            JsonObject bodyLoose = buildGeminiVisionRequestBody(b64, mime, false);
+            try {
+                return executeGeminiGenerateContent(geminiModelForVision(), bodyLoose);
+            } catch (AIEngineException second) {
+                throw new AIEngineException(
+                        first.getMessage() + " | Retry without JSON mode: " + second.getMessage(),
+                        second.getCause());
+            }
         }
-        if (c.isEnum()) {
-            return "enum";
+    }
+
+    private static boolean geminiVisionRetryWithoutJsonMode(AIEngineException e) {
+        if (e == null || e.getMessage() == null) {
+            return false;
         }
-        return "class";
+        String m = e.getMessage();
+        return m.contains("400") || m.contains("INVALID_ARGUMENT") || m.contains("Unsupported")
+                || m.contains("Json") || m.contains("json") || m.contains("responseMimeType");
+    }
+
+    private static JsonObject buildGeminiVisionRequestBody(String imageBase64, String mime, boolean applicationJsonOutput) {
+        JsonObject sysPart = new JsonObject();
+        sysPart.addProperty("text", SYSTEM_UML_JSON);
+        JsonObject systemInstruction = new JsonObject();
+        JsonArray sysParts = new JsonArray();
+        sysParts.add(sysPart);
+        systemInstruction.add("parts", sysParts);
+
+        JsonArray userParts = new JsonArray();
+        JsonObject textPart = new JsonObject();
+        textPart.addProperty("text",
+                "Analyze this UML class diagram image. Extract classes (with attributes and methods if visible) and relationships. "
+                        + "Reply with ONLY valid JSON per the system instructions — no markdown fences, no commentary.");
+        userParts.add(textPart);
+        JsonObject inline = new JsonObject();
+        inline.addProperty("mime_type", mime);
+        inline.addProperty("data", imageBase64);
+        JsonObject imgPart = new JsonObject();
+        imgPart.add("inline_data", inline);
+        userParts.add(imgPart);
+
+        JsonObject userTurn = new JsonObject();
+        userTurn.addProperty("role", "user");
+        userTurn.add("parts", userParts);
+
+        JsonArray contents = new JsonArray();
+        contents.add(userTurn);
+
+        JsonObject genCfg = new JsonObject();
+        genCfg.addProperty("temperature", 0.2);
+        genCfg.addProperty("maxOutputTokens", 8192);
+        if (applicationJsonOutput) {
+            genCfg.addProperty("responseMimeType", "application/json");
+        }
+
+        JsonObject body = new JsonObject();
+        body.add("systemInstruction", systemInstruction);
+        body.add("contents", contents);
+        body.add("generationConfig", genCfg);
+        return body;
+    }
+
+    private HttpUrl geminiGenerateContentHttpUrl(String modelId) {
+        String mid = normalizeGeminiModelId(modelId);
+        String urlString = "https://generativelanguage.googleapis.com/v1beta/models/" + mid + ":generateContent";
+        HttpUrl base = HttpUrl.parse(urlString);
+        if (base == null) {
+            throw new AIEngineException("Invalid Gemini model id (check ai.gemini.model): " + mid, null);
+        }
+        return base.newBuilder().addQueryParameter("key", geminiApiKey).build();
+    }
+
+    private String executeGeminiGenerateContent(String modelId, JsonObject requestBody) {
+        HttpUrl url = geminiGenerateContentHttpUrl(modelId);
+        Request request = new Request.Builder()
+                .url(url)
+                .header("Content-Type", "application/json")
+                .post(RequestBody.create(requestBody.toString(), JSON_MEDIA))
+                .build();
+        try (Response resp = http.newCall(request).execute()) {
+            String respBody = resp.body() != null ? resp.body().string() : "";
+            if (!resp.isSuccessful()) {
+                String detail = httpErrorDetail(respBody);
+                throw new AIEngineException(
+                        "Gemini vision request failed: HTTP " + resp.code()
+                                + (detail != null ? " — " + detail : " — " + truncate(respBody, 500)),
+                        null);
+            }
+            return extractGeminiText(respBody);
+        } catch (IOException e) {
+            throw new AIEngineException("Gemini vision request failed: " + e.getMessage(), e);
+        }
     }
 
     private boolean isCerebrasEndpoint() {
@@ -446,7 +596,8 @@ public class LLMAPIEngine implements IAIEngine {
         JsonObject sys = new JsonObject();
         sys.addProperty("role", "system");
         sys.addProperty("content",
-                "You are an expert software architect grading UML class diagrams. Reply with a single JSON object only, no markdown.");
+                "You are an expert software architect grading UML class diagrams. Reply with a single flat JSON object only "
+                        + "(keys: couplingScore, cohesionScore, solidScore, suggestions, summary). No JSON Schema wrappers, no markdown.");
         messages.add(sys);
         JsonObject userMsg = new JsonObject();
         userMsg.addProperty("role", "user");
@@ -551,6 +702,29 @@ public class LLMAPIEngine implements IAIEngine {
     }
 
     private String postChatCompletions(JsonObject body, String url, String bearerKey) {
+        if (useGemini) {
+            JsonObject geminiBody = convertOpenAiChatRequestToGemini(body);
+            HttpUrl geminiUrl = geminiGenerateContentHttpUrl(geminiModel);
+            Request request = new Request.Builder()
+                    .url(geminiUrl)
+                    .header("Content-Type", "application/json")
+                    .post(RequestBody.create(geminiBody.toString(), JSON_MEDIA))
+                    .build();
+            try (Response resp = http.newCall(request).execute()) {
+                String respBody = resp.body() != null ? resp.body().string() : "";
+                if (!resp.isSuccessful()) {
+                    String detail = httpErrorDetail(respBody);
+                    throw new AIEngineException(
+                            "Gemini request failed: HTTP " + resp.code()
+                                    + (detail != null ? " — " + detail : " — " + truncate(respBody, 500)),
+                            null);
+                }
+                return extractGeminiText(respBody);
+            } catch (IOException e) {
+                throw new AIEngineException("Gemini request failed: " + e.getMessage(), e);
+            }
+        }
+
         Request request = new Request.Builder()
                 .url(url)
                 .header("Authorization", "Bearer " + bearerKey)
@@ -569,6 +743,267 @@ public class LLMAPIEngine implements IAIEngine {
             return extractAssistantText(respBody);
         } catch (IOException e) {
             throw new AIEngineException("AI request failed: " + e.getMessage(), e);
+        }
+    }
+
+    private static JsonObject convertOpenAiChatRequestToGemini(JsonObject openAiBody) {
+        JsonObject out = new JsonObject();
+        JsonObject genCfg = new JsonObject();
+        if (openAiBody.has("temperature") && !openAiBody.get("temperature").isJsonNull()) {
+            genCfg.add("temperature", openAiBody.get("temperature"));
+        }
+        if (openAiBody.has("max_completion_tokens") && openAiBody.get("max_completion_tokens").isJsonPrimitive()) {
+            int m = openAiBody.get("max_completion_tokens").getAsInt();
+            if (m > 0) {
+                genCfg.addProperty("maxOutputTokens", Math.min(m, 8192));
+            }
+        }
+        if (openAiBody.has("response_format") && openAiBody.get("response_format").isJsonObject()) {
+            JsonObject rf = openAiBody.getAsJsonObject("response_format");
+            if (rf.has("type") && "json_object".equals(rf.get("type").getAsString())) {
+                genCfg.addProperty("responseMimeType", "application/json");
+            }
+        }
+        out.add("generationConfig", genCfg);
+
+        JsonArray messages = openAiBody.getAsJsonArray("messages");
+        JsonObject systemInst = null;
+        JsonArray contents = new JsonArray();
+        for (JsonElement el : messages) {
+            JsonObject m = el.getAsJsonObject();
+            String role = m.get("role").getAsString();
+            JsonElement contentEl = m.get("content");
+            if ("system".equals(role)) {
+                String t = extractOpenAiTextContent(contentEl);
+                systemInst = new JsonObject();
+                JsonArray sparts = new JsonArray();
+                JsonObject pt = new JsonObject();
+                pt.addProperty("text", t);
+                sparts.add(pt);
+                systemInst.add("parts", sparts);
+            } else if ("user".equals(role)) {
+                JsonObject row = new JsonObject();
+                row.addProperty("role", "user");
+                row.add("parts", geminiPartsFromUserContent(contentEl));
+                contents.add(row);
+            } else if ("assistant".equals(role)) {
+                JsonObject row = new JsonObject();
+                row.addProperty("role", "model");
+                JsonArray parts = new JsonArray();
+                JsonObject pt = new JsonObject();
+                pt.addProperty("text", extractOpenAiTextContent(contentEl));
+                parts.add(pt);
+                row.add("parts", parts);
+                contents.add(row);
+            }
+        }
+        if (systemInst != null) {
+            out.add("systemInstruction", systemInst);
+        }
+        out.add("contents", contents);
+        return out;
+    }
+
+    private static String extractOpenAiTextContent(JsonElement contentEl) {
+        if (contentEl == null || contentEl.isJsonNull()) {
+            return "";
+        }
+        if (contentEl.isJsonPrimitive()) {
+            return contentEl.getAsString();
+        }
+        if (contentEl.isJsonArray()) {
+            StringBuilder sb = new StringBuilder();
+            for (JsonElement e : contentEl.getAsJsonArray()) {
+                if (e.isJsonObject()) {
+                    JsonObject o = e.getAsJsonObject();
+                    if (o.has("type") && "text".equals(o.get("type").getAsString()) && o.has("text")) {
+                        sb.append(o.get("text").getAsString());
+                    }
+                }
+            }
+            return sb.toString();
+        }
+        return "";
+    }
+
+    private static JsonArray geminiPartsFromUserContent(JsonElement contentEl) {
+        JsonArray parts = new JsonArray();
+        if (contentEl == null || contentEl.isJsonNull()) {
+            return parts;
+        }
+        if (contentEl.isJsonPrimitive()) {
+            JsonObject p = new JsonObject();
+            p.addProperty("text", contentEl.getAsString());
+            parts.add(p);
+            return parts;
+        }
+        if (contentEl.isJsonArray()) {
+            for (JsonElement e : contentEl.getAsJsonArray()) {
+                if (!e.isJsonObject()) {
+                    continue;
+                }
+                JsonObject o = e.getAsJsonObject();
+                String type = o.has("type") ? o.get("type").getAsString() : "text";
+                if ("text".equals(type) && o.has("text")) {
+                    JsonObject p = new JsonObject();
+                    p.addProperty("text", o.get("text").getAsString());
+                    parts.add(p);
+                } else if ("image_url".equals(type) && o.has("image_url")) {
+                    JsonObject iu = o.getAsJsonObject("image_url");
+                    if (!iu.has("url")) {
+                        continue;
+                    }
+                    String url = iu.get("url").getAsString();
+                    int comma = url.indexOf(',');
+                    String b64 = comma >= 0 ? url.substring(comma + 1) : url;
+                    String mime = "image/png";
+                    if (url.startsWith("data:")) {
+                        int semi = url.indexOf(';');
+                        if (semi > 5) {
+                            mime = url.substring(5, semi);
+                        }
+                    }
+                    JsonObject inline = new JsonObject();
+                    inline.addProperty("mime_type", mime);
+                    inline.addProperty("data", b64);
+                    JsonObject p = new JsonObject();
+                    p.add("inline_data", inline);
+                    parts.add(p);
+                }
+            }
+        }
+        return parts;
+    }
+
+    private static String extractGeminiText(String responseJson) {
+        JsonObject root = JsonParser.parseString(responseJson).getAsJsonObject();
+        if (root.has("error")) {
+            JsonElement errEl = root.get("error");
+            String msg = errEl.isJsonObject() && errEl.getAsJsonObject().has("message")
+                    ? errEl.getAsJsonObject().get("message").getAsString()
+                    : errEl.toString();
+            throw new AIEngineException("Gemini error: " + msg, null);
+        }
+        if (root.has("promptFeedback")) {
+            JsonObject pf = root.getAsJsonObject("promptFeedback");
+            if (pf.has("blockReason")) {
+                throw new AIEngineException(
+                        "Gemini blocked the prompt or image: " + pf.get("blockReason").getAsString(),
+                        null);
+            }
+        }
+        if (!root.has("candidates") || root.get("candidates").isJsonNull()) {
+            throw new AIEngineException(
+                    "Gemini returned no candidates (image too large, safety filter, or model issue). Raw: "
+                            + truncate(responseJson, 500),
+                    null);
+        }
+        JsonArray candidates = root.getAsJsonArray("candidates");
+        if (candidates.size() == 0) {
+            throw new AIEngineException(
+                    "Gemini returned no candidates (image too large, safety filter, or model issue). Raw: "
+                            + truncate(responseJson, 500),
+                    null);
+        }
+        JsonObject cand = candidates.get(0).getAsJsonObject();
+        if (cand.has("finishReason") && cand.get("finishReason").isJsonPrimitive()) {
+            String fr = cand.get("finishReason").getAsString();
+            if ("SAFETY".equals(fr) || "BLOCKLIST".equals(fr) || "PROHIBITED_CONTENT".equals(fr)) {
+                throw new AIEngineException("Gemini stopped for safety: " + fr, null);
+            }
+        }
+        if (cand.has("content") && !cand.get("content").isJsonNull()) {
+            JsonObject content = cand.getAsJsonObject("content");
+            if (content.has("parts")) {
+                StringBuilder sb = new StringBuilder();
+                for (JsonElement p : content.getAsJsonArray("parts")) {
+                    if (p.isJsonObject() && p.getAsJsonObject().has("text")) {
+                        sb.append(p.getAsJsonObject().get("text").getAsString());
+                    }
+                }
+                String text = sb.toString().trim();
+                if (!text.isEmpty()) {
+                    return text;
+                }
+            }
+        }
+        throw new AIEngineException("Gemini returned empty text. Raw: " + truncate(responseJson, 500), null);
+    }
+
+    /**
+     * Scales and JPEG-compresses diagram images so vision APIs (especially Gemini inline limits) accept them.
+     */
+    private static byte[] prepareDiagramImageForVision(byte[] data) {
+        if (data == null || data.length == 0) {
+            return data;
+        }
+        byte[] cur = compressDiagramImage(data);
+        try {
+            BufferedImage src = ImageIO.read(new ByteArrayInputStream(cur));
+            if (src == null) {
+                return cur;
+            }
+            int maxSide = 1536;
+            float quality = 0.78f;
+            for (int attempt = 0; attempt < 3; attempt++) {
+                byte[] jpeg = rasterToJpegBytes(src, maxSide, quality);
+                if (jpeg == null || jpeg.length == 0) {
+                    return cur;
+                }
+                int b64Len = Base64.getEncoder().encodeToString(jpeg).length();
+                if (b64Len <= 5_500_000 || attempt == 2) {
+                    return jpeg;
+                }
+                maxSide = Math.max(768, maxSide * 3 / 4);
+                quality = Math.max(0.55f, quality - 0.12f);
+                BufferedImage smaller = ImageIO.read(new ByteArrayInputStream(jpeg));
+                if (smaller != null) {
+                    src = smaller;
+                }
+            }
+        } catch (Exception e) {
+            return cur;
+        }
+        return cur;
+    }
+
+    private static byte[] rasterToJpegBytes(BufferedImage src, int maxSide, float quality) {
+        try {
+            int w = src.getWidth();
+            int h = src.getHeight();
+            int max = Math.max(w, h);
+            double scale = max > maxSide ? (double) maxSide / max : 1.0;
+            BufferedImage toWrite = src;
+            if (scale < 1.0) {
+                int nw = Math.max(1, (int) Math.round(w * scale));
+                int nh = Math.max(1, (int) Math.round(h * scale));
+                BufferedImage scaled = new BufferedImage(nw, nh, BufferedImage.TYPE_INT_RGB);
+                Graphics2D g = scaled.createGraphics();
+                g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+                g.drawImage(src, 0, 0, nw, nh, null);
+                g.dispose();
+                toWrite = scaled;
+            }
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
+            Iterator<ImageWriter> writers = ImageIO.getImageWritersByFormatName("jpeg");
+            if (!writers.hasNext()) {
+                return null;
+            }
+            ImageWriter writer = writers.next();
+            ImageWriteParam param = writer.getDefaultWriteParam();
+            if (param.canWriteCompressed()) {
+                param.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);
+                param.setCompressionQuality(quality);
+            }
+            ImageOutputStream ios = ImageIO.createImageOutputStream(bos);
+            writer.setOutput(ios);
+            writer.write(null, new IIOImage(toWrite, null, null), param);
+            writer.dispose();
+            ios.close();
+            byte[] out = bos.toByteArray();
+            return out.length > 0 ? out : null;
+        } catch (Exception e) {
+            return null;
         }
     }
 
@@ -912,11 +1347,12 @@ public class LLMAPIEngine implements IAIEngine {
         }
     }
 
-    private DesignEvaluationReport parseEvaluationJson(String assistantContent) {
+    private DesignEvaluationReport parseEvaluationJson(String assistantContent, UMLModel diagramModel) {
         DesignEvaluationReport report = new DesignEvaluationReport();
         String json = extractJsonFromReply(assistantContent);
         try {
             JsonObject root = JsonParser.parseString(json).getAsJsonObject();
+            root = coalesceEvaluationJsonRoot(root);
             Float c = readScoreFlexible(root, "couplingScore", "coupling", "coupling_score");
             Float co = readScoreFlexible(root, "cohesionScore", "cohesion", "cohesion_score");
             Float s = readScoreFlexible(root, "solidScore", "solid", "solid_score", "solidPrinciplesScore");
@@ -935,12 +1371,15 @@ public class LLMAPIEngine implements IAIEngine {
                 JsonArray arr = root.getAsJsonArray("suggestions");
                 java.util.List<String> list = new java.util.ArrayList<>();
                 for (JsonElement e : arr) {
-                    list.add(e.getAsString());
+                    if (e.isJsonPrimitive()) {
+                        list.add(e.getAsString());
+                    } else if (e.isJsonObject() && e.getAsJsonObject().has("text")) {
+                        list.add(e.getAsJsonObject().get("text").getAsString());
+                    }
                 }
                 report.setSuggestions(list);
             }
 
-            // Heuristic: model echoed template zeros — try regex rescue from raw reply
             if (allScoresSuspicious(report)) {
                 applyScoresFromRegex(assistantContent, report);
             }
@@ -953,7 +1392,84 @@ public class LLMAPIEngine implements IAIEngine {
                 report.setSolidScore(6f);
             }
         }
+        if (diagramModel != null) {
+            validateEvaluationAgainstDiagram(report, diagramModel);
+        }
         return report;
+    }
+
+    private static JsonObject coalesceEvaluationJsonRoot(JsonObject root) {
+        if (root == null) {
+            return new JsonObject();
+        }
+        if (root.has("couplingScore") || root.has("cohesionScore") || root.has("solidScore")
+                || root.has("summary") || root.has("feedbackSummary") || root.has("suggestions")) {
+            return root;
+        }
+        if (root.has("properties") && root.get("properties").isJsonObject()) {
+            JsonObject p = root.getAsJsonObject("properties");
+            if (p.has("couplingScore") || p.has("summary") || p.has("suggestions") || p.has("cohesionScore")) {
+                return p;
+            }
+        }
+        return root;
+    }
+
+    private static boolean mentionsAnyDiagramClass(String text, java.util.List<String> classNames) {
+        if (text == null || text.isBlank() || classNames == null || classNames.isEmpty()) {
+            return false;
+        }
+        for (String name : classNames) {
+            if (name == null || name.isBlank()) {
+                continue;
+            }
+            if (name.length() == 1) {
+                if (text.contains(name)) {
+                    return true;
+                }
+                continue;
+            }
+            if (Pattern.compile("\\b" + Pattern.quote(name) + "\\b").matcher(text).find()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static void validateEvaluationAgainstDiagram(DesignEvaluationReport report, UMLModel m) {
+        java.util.List<String> names = AiDiagramPayload.classNames(m);
+        if (names.isEmpty()) {
+            return;
+        }
+        String summary = report.getFeedbackSummary();
+        java.util.List<String> sug = new java.util.ArrayList<>(report.getSuggestions());
+        boolean ok = mentionsAnyDiagramClass(summary, names);
+        if (!ok) {
+            for (String s : sug) {
+                if (mentionsAnyDiagramClass(s, names)) {
+                    ok = true;
+                    break;
+                }
+            }
+        }
+        if (!ok) {
+            report.setSuggestions(java.util.List.of());
+            report.setFeedbackSummary(
+                    "The AI reply did not reference any class from your diagram ("
+                            + String.join(", ", names)
+                            + "). Try Evaluate again or switch model.\n\n"
+                            + (summary != null && !summary.isBlank()
+                                    ? "— Model text (for debugging) —\n" + summary
+                                    : ""));
+            return;
+        }
+        java.util.List<String> filtered = new java.util.ArrayList<>();
+        for (String s : sug) {
+            if (mentionsAnyDiagramClass(s, names)) {
+                filtered.add(s);
+            }
+        }
+        report.setSuggestions(filtered);
     }
 
     private static boolean allScoresSuspicious(DesignEvaluationReport r) {

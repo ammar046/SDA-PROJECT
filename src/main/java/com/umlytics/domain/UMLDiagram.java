@@ -22,11 +22,13 @@ public class UMLDiagram {
     private double defaultClassFontSize = 12.0;
     private double defaultClassWidth = 200.0;
     private double defaultClassHeight = 140.0;
-    private String defaultEdgeColor = "Black";
+    private String defaultEdgeColor = "Purple";
     private boolean defaultEdgeDashed;
     private RelationshipType defaultRelationshipType = RelationshipType.ASSOCIATION;
     private final List<ConceptualClass> classes = new ArrayList<>();
     private final List<Relationship> relationships = new ArrayList<>();
+    /** UI-only messages (e.g. code import skips); not persisted to DB. */
+    private List<String> importNotes;
 
     public void render() {
         // UI rendering is handled by the JavaFX UI layer.
@@ -248,6 +250,14 @@ public class UMLDiagram {
 
     public void setDefaultRelationshipType(RelationshipType defaultRelationshipType) {
         this.defaultRelationshipType = defaultRelationshipType == null ? RelationshipType.ASSOCIATION : defaultRelationshipType;
+    }
+
+    public List<String> getImportNotes() {
+        return importNotes;
+    }
+
+    public void setImportNotes(List<String> importNotes) {
+        this.importNotes = importNotes == null || importNotes.isEmpty() ? null : List.copyOf(importNotes);
     }
 
     private String escapeJson(String value) {

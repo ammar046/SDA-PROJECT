@@ -40,6 +40,7 @@ com\umlytics\enums\ImageFormat.class
 com\umlytics\enums\SenderType.class
 com\umlytics\ui\DiagramEditorPanel.class
 com\umlytics\db\DatabaseManager.class
+com\umlytics\services\AiDiagramPayload.class
 com\umlytics\domain\DependencyRelationship.class
 com\umlytics\domain\SourceFile.class
 com\umlytics\domain\ChatMessage.class
@@ -73,6 +74,7 @@ com\umlytics\exceptions\DiagramTooSimpleException.class
 com\umlytics\enums\EditType.class
 com\umlytics\interfaces\ISpeechToTextService.class
 com\umlytics\services\AudioCapture.class
+com\umlytics\services\SkeletonResponseNormalizer.class
 com\umlytics\services\DiagramExportService$DiagramBounds.class
 com\umlytics\domain\ProjectContext.class
 com\umlytics\domain\DiagramImage.class

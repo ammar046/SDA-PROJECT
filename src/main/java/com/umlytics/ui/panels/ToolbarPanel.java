@@ -129,9 +129,14 @@ public class ToolbarPanel extends ToolBar {
             var d = facade.getDiagramController().generateFromCode(pid, files);
             facade.openDiagram(d);
             facade.refreshProjectExplorer();
-            MainWindow.showToast("Diagram from " + files.size() + " file(s) ✓");
+            String base = "Diagram from " + files.size() + " file(s) ✓";
+            if (d.getImportNotes() != null && !d.getImportNotes().isEmpty()) {
+                MainWindow.showToast(base + " — note: " + String.join("; ", d.getImportNotes()));
+            } else {
+                MainWindow.showToast(base);
+            }
         } catch (Exception ex) {
-            MainWindow.showToast("Error: " + ex.getMessage());
+            MainWindow.showErrorToast(ex);
         }
     }
 
@@ -160,7 +165,7 @@ public class ToolbarPanel extends ToolBar {
             facade.refreshProjectExplorer();
             MainWindow.showToast("Image analysed ✓  " + f.getName());
         } catch (Exception ex) {
-            MainWindow.showToast("Error: " + ex.getMessage());
+            MainWindow.showErrorToast(ex);
         }
     }
 }

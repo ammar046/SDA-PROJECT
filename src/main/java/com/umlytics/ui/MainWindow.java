@@ -164,6 +164,25 @@ public class MainWindow extends Application {
     }
 
     // ── Toast ─────────────────────────────────────────────────────────────────
+    /** Toast + full stack trace on stderr (avoids multi-line wall-of-text in the UI). */
+    public static void showErrorToast(Throwable ex) {
+        if (ex == null) {
+            showToast("Error");
+            return;
+        }
+        String m = ex.getMessage();
+        if (m == null || m.isBlank()) {
+            m = ex.getClass().getSimpleName();
+        }
+        m = m.replace('\r', ' ').replace('\n', ' ').replaceAll("\\s+", " ").trim();
+        if (m.length() > 240) {
+            m = m.substring(0, 240) + "…";
+        }
+        System.err.println("[UMLytics] " + ex.getClass().getName() + ": " + ex.getMessage());
+        ex.printStackTrace(System.err);
+        showToast("Error: " + m);
+    }
+
     public static void showToast(String msg) {
         if (toastOverlay == null) return;
         Platform.runLater(() -> {

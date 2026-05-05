@@ -218,11 +218,14 @@ public class DiagramExportService implements IExportService {
         if (relationship.getLabel() != null && !relationship.getLabel().isBlank()) {
             g2.drawString(relationship.getLabel(), (int) bendX + 5, (int) bendY - 4);
         }
+        g2.setFont(new Font("SansSerif", Font.BOLD, 12));
+        Color cardColor = new Color(0x5B, 0x21, 0xB6);
+        g2.setColor(cardColor);
         if (relationship.getSourceMultiplicity() != null && !relationship.getSourceMultiplicity().isBlank()) {
-            g2.drawString(relationship.getSourceMultiplicity(), (int) sx - 10, (int) sy - 5);
+            g2.drawString(relationship.getSourceMultiplicity(), (int) sx - 12, (int) sy - 8);
         }
         if (relationship.getTargetMultiplicity() != null && !relationship.getTargetMultiplicity().isBlank()) {
-            g2.drawString(relationship.getTargetMultiplicity(), (int) tx + 4, (int) ty - 5);
+            g2.drawString(relationship.getTargetMultiplicity(), (int) tx + 6, (int) ty - 8);
         }
     }
 
@@ -352,11 +355,14 @@ public class DiagramExportService implements IExportService {
     }
 
     private Color toEdgeColor(String value) {
-        return switch (safe(value, "Black")) {
+        return switch (safe(value, "Purple")) {
+            case "Purple" -> new Color(0x93, 0x33, 0xEA);
             case "Blue" -> new Color(0x1A, 0x73, 0xE8);
             case "Red" -> new Color(0xD9, 0x30, 0x25);
             case "Green" -> new Color(0x18, 0x80, 0x38);
-            default -> Color.BLACK;
+            case "Ink" -> Color.BLACK;
+            case "Black" -> new Color(0x93, 0x33, 0xEA);
+            default -> new Color(0x93, 0x33, 0xEA);
         };
     }
 

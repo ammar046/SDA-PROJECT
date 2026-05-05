@@ -1,6 +1,8 @@
 package com.umlytics.domain;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 
@@ -12,6 +14,7 @@ public class DesignEvaluationReport {
     private float cohesionScore;
     private float solidScore;
     private String feedbackSummary;
+    private List<String> suggestions = new ArrayList<>();
     private LocalDateTime evaluationDate;
 
     public String getSummary() {
@@ -89,17 +92,10 @@ public class DesignEvaluationReport {
     }
 
     public List<String> getSuggestions() {
-        if (feedbackSummary == null || feedbackSummary.isBlank()) {
-            return List.of();
-        }
-        return List.of(feedbackSummary);
+        return Collections.unmodifiableList(suggestions);
     }
 
     public void setSuggestions(List<String> suggestions) {
-        if (suggestions == null || suggestions.isEmpty()) {
-            this.feedbackSummary = null;
-            return;
-        }
-        this.feedbackSummary = String.join(" ", suggestions);
+        this.suggestions = suggestions == null ? new ArrayList<>() : new ArrayList<>(suggestions);
     }
 }

@@ -14,6 +14,7 @@ import com.umlytics.interfaces.IAIEngine;
 import com.umlytics.interfaces.IChatRepository;
 import com.umlytics.interfaces.IDiagramRepository;
 import com.umlytics.interfaces.IEvaluationRepository;
+import com.umlytics.services.AiDiagramPayload;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -48,7 +49,7 @@ public class AIController {
         UMLModel model = new UMLModel();
         model.setClasses(new java.util.ArrayList<>(diagram.getClasses()));
         model.setRelationships(new java.util.ArrayList<>(diagram.getRelationships()));
-        model.setRawJson(diagram.serialize());
+        model.setRawJson(AiDiagramPayload.evaluationPayload(diagram));
 
         DesignEvaluationReport report = aiEngine.evaluateDesign(model);
         report.setReportId(UUID.randomUUID());
@@ -63,13 +64,14 @@ public class AIController {
     }
 
     public ChatMessage submitDesignQuestion(String questionText, UUID projectId) {
-        return submitDesignQuestion(questionText, projectId, null);
+        return submitDesignQuestion(questionText, projectId, null, null);
     }
 
     /**
-     * @param diagramId when non-null, the AI sees this diagram’s classes and relationships (same canvas as the editor).
+     * @param diagramId when non-null, used only if {@code liveDiagram} is null — loads from repository (may be stale).
+     * @param liveDiagram when non-null, the AI sees this exact canvas state (preferred).
      */
-    public ChatMessage submitDesignQuestion(String questionText, UUID projectId, UUID diagramId) {
+    public ChatMessage submitDesignQuestion(String questionText, UUID projectId, UUID diagramId, UMLDiagram liveDiagram) {
         if (projectId == null) {
             throw new ValidationException("Open a project first.");
         }
@@ -86,7 +88,9 @@ public class AIController {
 
         ProjectContext context = new ProjectContext();
         context.setChatHistory(chatRepo.findByProject(projectId));
-        if (diagramId != null) {
+        if (liveDiagram != null) {
+            context.setCurrentDiagram(liveDiagram);
+        } else if (diagramId != null) {
             UMLDiagram d = diagramRepo.findById(diagramId);
             if (d != null) {
                 context.setCurrentDiagram(d);
@@ -104,6 +108,11 @@ public class AIController {
         return aiMessage;
     }
 
+    /** @deprecated Prefer {@link #submitDesignQuestion(String, UUID, UUID, UMLDiagram)} with the live canvas. */
+    public ChatMessage submitDesignQuestion(String questionText, UUID projectId, UUID diagramId) {
+        return submitDesignQuestion(questionText, projectId, diagramId, null);
+    }
+
     public ChatMessage submitDesignQuestion(String questionText, int projectId) {
         return submitDesignQuestion(questionText, UUID.nameUUIDFromBytes(("legacy-project-" + projectId).getBytes()));
     }
@@ -119,13 +128,12 @@ public class AIController {
         UMLModel model = new UMLModel();
         model.setClasses(new java.util.ArrayList<>(diagram.getClasses()));
         model.setRelationships(new java.util.ArrayList<>(diagram.getRelationships()));
-        model.setRawJson(diagram.serialize());
 
         String response = aiEngine.generateStructure(model);
         ClassSuggestion suggestion = new ClassSuggestion();
         suggestion.setSuggestionId(UUID.randomUUID());
         suggestion.setDiagramId(diagramId);
-        suggestion.setSkeletonCode(ClassSuggestion.combineSkeletonResponse(response));
+        suggestion.setSkeletonCode(ClassSuggestion.combineSkeletonResponse(response, AiDiagramPayload.classNameSet(model)));
         suggestion.setAccepted(false);
         return suggestion;
     }

@@ -8,6 +8,7 @@ public class UMLModel {
     private List<ConceptualClass> classes = new ArrayList<>();
     private List<Relationship> relationships = new ArrayList<>();
     private String rawJson;
+    private final List<String> parseNotes = new ArrayList<>();
 
     public UMLDiagram toUMLDiagram() {
         UMLDiagram diagram = new UMLDiagram();
@@ -47,5 +48,15 @@ public class UMLModel {
 
     public void setRawJson(String rawJson) {
         this.rawJson = rawJson;
+    }
+
+    public void addParseNote(String note) {
+        if (note != null && !note.isBlank()) {
+            parseNotes.add(note);
+        }
+    }
+
+    public List<String> getParseNotes() {
+        return List.copyOf(parseNotes);
     }
 }

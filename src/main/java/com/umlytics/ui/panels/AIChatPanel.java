@@ -177,16 +177,23 @@ public class AIChatPanel extends VBox {
                 userLbl.getStyleClass().add("chat-bubble-user");
                 bubble = userLbl;
             } else {
-                // Selectable, wrapped prose — Labels made JSON/errors unreadable and un-copyable.
-                TextArea ta = new TextArea(text != null ? text : "");
-                ta.setEditable(false);
-                ta.setWrapText(true);
-                ta.setMaxWidth(260);
-                ta.setFocusTraversable(true);
-                ta.getStyleClass().add("chat-bubble-ai");
-                int lines = Math.max(2, Math.min(22, (text != null ? text : "").split("\r?\n", -1).length + 2));
-                ta.setPrefRowCount(lines);
-                bubble = ta;
+                Label aiLbl = new Label(text != null ? text : "");
+                aiLbl.setWrapText(true);
+                aiLbl.setMaxWidth(260);
+                aiLbl.getStyleClass().add("chat-bubble-ai");
+                
+                ContextMenu contextMenu = new ContextMenu();
+                MenuItem copyItem = new MenuItem("Copy");
+                copyItem.setOnAction(e -> {
+                    ClipboardContent cc = new ClipboardContent();
+                    cc.putString(aiLbl.getText());
+                    Clipboard.getSystemClipboard().setContent(cc);
+                    MainWindow.showToast("Copied");
+                });
+                contextMenu.getItems().add(copyItem);
+                aiLbl.setContextMenu(contextMenu);
+                
+                bubble = aiLbl;
             }
 
             // Timestamp
@@ -203,18 +210,14 @@ public class AIChatPanel extends VBox {
         Platform.runLater(() -> scroll.setVvalue(1.0));
     }
 
-    /** Read-only text area + Copy — Labels are not selectable, so generated code must use this. */
     private void addSkeletonCodeBubble(String skeletonCode) {
         String body = skeletonCode != null ? skeletonCode : "";
         String fullText = "Java skeleton (copy or use the button below):\n\n" + body;
-        TextArea ta = new TextArea(fullText);
-        ta.setEditable(false);
+        Label ta = new Label(fullText);
         ta.setWrapText(true);
         ta.setMaxWidth(260);
         ta.getStyleClass().add("chat-bubble-ai");
         ta.setStyle("-fx-font-family: 'Consolas','Courier New',monospace; -fx-font-size: 12px;");
-        int lineCount = fullText.split("\r?\n", -1).length;
-        ta.setPrefRowCount(Math.min(28, Math.max(4, lineCount + 1)));
 
         Button copyBtn = new Button("Copy");
         copyBtn.setStyle("-fx-background-color: #7c3aed; -fx-text-fill: white; "

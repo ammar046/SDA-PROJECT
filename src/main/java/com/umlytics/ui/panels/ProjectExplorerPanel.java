@@ -9,6 +9,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 // GRASP: Information Expert
@@ -102,17 +103,42 @@ public class ProjectExplorerPanel extends VBox {
                 setStyle(null);
                 setContextMenu(null);
             } else if (item instanceof UMLDiagram d) {
-                setText("📄  " + d.getTitle());
+                String label = d.getTitle() == null || d.getTitle().isBlank() ? "Untitled Diagram" : d.getTitle();
+                setText("📄  " + label);
                 setStyle(null);
                 MenuItem open = new MenuItem("Open");
+                MenuItem rename = new MenuItem("Rename…");
                 MenuItem delete = new MenuItem("Delete");
                 open.setOnAction(e -> facade.openDiagram(d));
+                rename.setOnAction(e -> {
+                    TextInputDialog dlg = new TextInputDialog(label);
+                    dlg.setTitle("Rename Diagram");
+                    dlg.setHeaderText("Enter a new name for this diagram.");
+                    dlg.setContentText("Name:");
+                    Optional<String> result = dlg.showAndWait();
+                    if (result.isEmpty()) {
+                        return;
+                    }
+                    String name = result.get().trim();
+                    if (name.isEmpty()) {
+                        new Alert(Alert.AlertType.WARNING, "Diagram name cannot be empty.", ButtonType.OK).showAndWait();
+                        return;
+                    }
+                    try {
+                        facade.getDiagramController().renameDiagram(d.getDiagramId(), name);
+                        facade.getEditorPanel().updateDiagramTitleIfCurrent(d.getDiagramId(), name);
+                        facade.refreshProjectExplorer();
+                        MainWindow.showToast("Renamed: " + name);
+                    } catch (Exception ex) {
+                        new Alert(Alert.AlertType.ERROR, ex.getMessage(), ButtonType.OK).showAndWait();
+                    }
+                });
                 delete.setOnAction(e -> {
                     facade.getEditorPanel().deleteDiagram(d.getDiagramId());
                     facade.refreshProjectExplorer();
-                    MainWindow.showToast("Deleted: " + d.getTitle());
+                    MainWindow.showToast("Deleted: " + label);
                 });
-                setContextMenu(new ContextMenu(open, new SeparatorMenuItem(), delete));
+                setContextMenu(new ContextMenu(open, rename, new SeparatorMenuItem(), delete));
             } else if (item instanceof NewDiagramSlot) {
                 setText("＋  New Diagram");
                 setStyle("-fx-text-fill: #06b6d4; -fx-font-style: italic;");

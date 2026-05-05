@@ -213,6 +213,27 @@ public class DiagramController {
         }
     }
 
+    /** Persists a new display title for an existing diagram. */
+    public void renameDiagram(UUID diagramId, String newTitle) {
+        if (diagramId == null) {
+            throw new ValidationException("Diagram id is required.");
+        }
+        if (newTitle == null || newTitle.isBlank()) {
+            throw new ValidationException("Diagram name cannot be empty.");
+        }
+        UMLDiagram diagram = diagramRepo.findById(diagramId);
+        if (diagram == null) {
+            throw new ValidationException("Diagram not found.");
+        }
+        diagram.setTitle(newTitle.trim());
+        diagram.setLastModifiedDate(LocalDateTime.now());
+        diagramRepo.update(diagram);
+    }
+
+    public void renameDiagram(int diagramId, String newTitle) {
+        renameDiagram(UUID.nameUUIDFromBytes(("legacy-diagram-" + diagramId).getBytes()), newTitle);
+    }
+
     private void pruneInvalidRelationships(UMLDiagram diagram) {
         Set<UUID> classIds = new HashSet<>();
         diagram.getClasses().forEach(c -> classIds.add(c.getClassId()));

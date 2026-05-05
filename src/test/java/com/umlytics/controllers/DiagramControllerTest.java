@@ -19,6 +19,7 @@ import java.io.File;
 import java.util.List;
 import java.util.UUID;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -78,6 +79,29 @@ class DiagramControllerTest {
         diagram.setDiagramId(UUID.randomUUID());
         repository.save(diagram);
         assertThrows(ValidationException.class, () -> controller.modifyClassDefinition(diagram.getDiagramId(), null));
+    }
+
+    @Test
+    void renameDiagramRejectsBlankName() {
+        UMLDiagram diagram = new UMLDiagram();
+        diagram.setDiagramId(UUID.randomUUID());
+        repository.save(diagram);
+        assertThrows(ValidationException.class, () -> controller.renameDiagram(diagram.getDiagramId(), "   "));
+    }
+
+    @Test
+    void renameDiagramNotFoundThrows() {
+        assertThrows(ValidationException.class, () -> controller.renameDiagram(UUID.randomUUID(), "X"));
+    }
+
+    @Test
+    void renameDiagramTrimsAndPersistsTitle() {
+        UMLDiagram diagram = new UMLDiagram();
+        diagram.setDiagramId(UUID.randomUUID());
+        diagram.setTitle("Old");
+        repository.save(diagram);
+        controller.renameDiagram(diagram.getDiagramId(), "  New Name  ");
+        assertEquals("New Name", diagram.getTitle());
     }
 
     private static class InMemoryDiagramRepository implements IDiagramRepository {

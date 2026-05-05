@@ -2010,6 +2010,16 @@ public class DiagramEditorPanel extends BorderPane {
         return currentDiagram != null ? currentDiagram.getDiagramId() : null;
     }
 
+    /** Keeps the open canvas in sync when the same diagram is renamed elsewhere (e.g. explorer). */
+    public void updateDiagramTitleIfCurrent(java.util.UUID diagramId, String title) {
+        if (currentDiagram == null || diagramId == null || title == null) {
+            return;
+        }
+        if (diagramId.equals(currentDiagram.getDiagramId())) {
+            currentDiagram.setTitle(title);
+        }
+    }
+
     /** Returns the number of classes in the current diagram. */
     public int getNodeCount() {
         return currentDiagram != null ? currentDiagram.getClasses().size() : 0;

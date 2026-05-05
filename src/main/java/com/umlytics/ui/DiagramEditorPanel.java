@@ -2248,7 +2248,7 @@ public class DiagramEditorPanel extends BorderPane {
                 } catch (Exception ex) {
                     javafx.application.Platform.runLater(() -> {
                         statusHintLabel.setText("ready");
-                        MainWindow.showErrorToast(ex);
+                        MainWindow.showToast("Image analysis failed: " + ex.getMessage());
                     });
                 }
             }, "image-analyze-thread").start();

@@ -136,7 +136,7 @@ public class ToolbarPanel extends ToolBar {
                 MainWindow.showToast(base);
             }
         } catch (Exception ex) {
-            MainWindow.showErrorToast(ex);
+            MainWindow.showToast("Error: " + ex.getMessage());
         }
     }
 
@@ -165,7 +165,7 @@ public class ToolbarPanel extends ToolBar {
             facade.refreshProjectExplorer();
             MainWindow.showToast("Image analysed ✓  " + f.getName());
         } catch (Exception ex) {
-            MainWindow.showErrorToast(ex);
+            MainWindow.showToast("Error: " + ex.getMessage());
         }
     }
 }

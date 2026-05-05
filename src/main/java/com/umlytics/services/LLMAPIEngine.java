@@ -22,7 +22,6 @@ import com.umlytics.enums.Visibility;
 import com.umlytics.exceptions.AIEngineException;
 import com.umlytics.interfaces.IAIEngine;
 
-import okhttp3.HttpUrl;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -109,8 +108,6 @@ public class LLMAPIEngine implements IAIEngine {
     /** Google Gemini (Generative Language API) — set ai.provider=gemini or only configure a Gemini key. */
     private final String geminiApiKey;
     private final String geminiModel;
-    /** Optional; when set, used for multimodal image analysis (defaults to {@link #geminiModel}). */
-    private final String geminiVisionModel;
     private final boolean useGemini;
 
     public LLMAPIEngine() {
@@ -128,9 +125,7 @@ public class LLMAPIEngine implements IAIEngine {
         }
         this.geminiApiKey = gemini;
         String gModel = trimOrEmpty(props.getProperty("ai.gemini.model"));
-        this.geminiModel = normalizeGeminiModelId(gModel.isEmpty() ? "gemini-2.0-flash" : gModel);
-        String gv = trimOrEmpty(props.getProperty("ai.gemini.vision.model"));
-        this.geminiVisionModel = gv.isEmpty() ? "" : normalizeGeminiModelId(gv);
+        this.geminiModel = gModel.isEmpty() ? "gemini-2.0-flash" : gModel;
         String provider = trimOrEmpty(props.getProperty("ai.provider", "")).toLowerCase();
         boolean openAiReady = openAiCredentialsLookValid(this.apiKey);
         this.useGemini = ("gemini".equals(provider) && !this.geminiApiKey.isEmpty())
@@ -188,38 +183,13 @@ public class LLMAPIEngine implements IAIEngine {
         return s == null ? "" : s.trim();
     }
 
-    /** Strips accidental "models/" prefix from console copy-paste. */
-    private static String normalizeGeminiModelId(String raw) {
-        if (raw == null || raw.isBlank()) {
-            return "gemini-2.0-flash";
-        }
-        String t = raw.trim();
-        if (t.toLowerCase().startsWith("models/")) {
-            t = t.substring("models/".length()).trim();
-        }
-        return t.isEmpty() ? "gemini-2.0-flash" : t;
-    }
-
     private boolean apiConfigured() {
         if (useGemini) {
-            return geminiCredentialsLookValid();
+            return !geminiApiKey.isEmpty()
+                    && !geminiApiKey.equalsIgnoreCase("YOUR_GEMINI_API_KEY_HERE")
+                    && !geminiApiKey.startsWith("${");
         }
         return openAiCredentialsLookValid(apiKey);
-    }
-
-    private boolean geminiCredentialsLookValid() {
-        return !geminiApiKey.isEmpty()
-                && !geminiApiKey.equalsIgnoreCase("YOUR_GEMINI_API_KEY_HERE")
-                && !geminiApiKey.startsWith("${");
-    }
-
-    /** Gemini key present (may be used for image analysis even when primary provider is OpenAI/Cerebras). */
-    private boolean canUseGeminiVision() {
-        return geminiCredentialsLookValid();
-    }
-
-    private String geminiModelForVision() {
-        return geminiVisionModel.isEmpty() ? geminiModel : geminiVisionModel;
     }
 
     private void requireApi() {
@@ -385,170 +355,23 @@ public class LLMAPIEngine implements IAIEngine {
         if (data == null || data.length == 0) {
             throw new AIEngineException("Uploaded image data is empty.", null);
         }
-        byte[] imagePayload = prepareDiagramImageForVision(data);
-        String mime = detectImageMime(imagePayload);
-
-        AIEngineException geminiFailure = null;
-        // Prefer Gemini whenever a key is set — works for Cerebras/text-only mains and avoids "needs vision" dead ends.
-        if (canUseGeminiVision()) {
-            try {
-                return parseUmlModelFromJson(analyzeImageWithGeminiNative(imagePayload, mime));
-            } catch (AIEngineException e) {
-                geminiFailure = e;
-                if (useGemini) {
-                    throw new AIEngineException(
-                            "Gemini image analysis failed. Check ai.gemini.api.key (or environment GEMINI_API_KEY) in "
-                                    + "config.properties next to pom.xml. Try ai.gemini.model=gemini-2.0-flash or "
-                                    + "ai.gemini.vision.model=gemini-2.0-flash. Detail: "
-                                    + e.getMessage(),
-                            e.getCause());
-                }
-            }
-        }
-
-        if (!apiConfigured()) {
-            if (geminiFailure != null) {
-                throw geminiFailure;
-            }
-            throw new AIEngineException(visionSetupHint(null), null);
-        }
-
+        requireApi();
+        byte[] imagePayload = compressDiagramImage(data);
         String user = "Analyze this UML class diagram image. Extract classes (with attributes and methods if visible) and relationships. "
                 + "Use the JSON schema from your instructions.";
         try {
-            return parseUmlModelFromJson(callChatCompletionsVision(user, imagePayload));
+            String content = callChatCompletionsVision(user, imagePayload);
+            return parseUmlModelFromJson(content);
         } catch (AIEngineException ex) {
-            if (geminiFailure != null) {
+            boolean hasDedicatedVision = !visionEndpoint.isEmpty() || !visionApiKey.isEmpty();
+            if (!hasDedicatedVision && isCerebrasEndpoint()) {
                 throw new AIEngineException(
-                        visionSetupHint(ex) + " Gemini attempt: " + geminiFailure.getMessage(),
+                        "Image analysis needs a vision-capable API. Options: (1) Add ai.vision.endpoint=https://api.openai.com/v1/chat/completions "
+                                + "with ai.vision.api.key and ai.vision.model=gpt-4o-mini (or gpt-4o), or (2) switch ai.api to a provider that supports "
+                                + "image_url in chat. Underlying error: " + ex.getMessage(),
                         ex);
             }
-            throw new AIEngineException(visionSetupHint(ex), ex);
-        }
-    }
-
-    private static String visionSetupHint(AIEngineException underlying) {
-        String tail = "";
-        if (underlying != null && underlying.getMessage() != null) {
-            String one = underlying.getMessage().replace('\r', ' ').replace('\n', ' ').trim();
-            if (one.length() > 100) {
-                one = one.substring(0, 100) + "…";
-            }
-            tail = " [" + one + "]";
-        }
-        return "Image analysis needs a multimodal API — set ai.gemini.api.key (or GEMINI_API_KEY) in config.properties beside pom.xml, "
-                + "or ai.vision.* with gpt-4o. Full error is printed in the console." + tail;
-    }
-
-    /**
-     * Native Gemini multimodal request (avoids OpenAI-shaped conversion issues) with JSON output for UML parsing.
-     */
-    private String analyzeImageWithGeminiNative(byte[] imageBytes, String mime) {
-        String b64 = Base64.getEncoder().encodeToString(imageBytes);
-        if (b64.length() > 6_000_000) {
-            imageBytes = prepareDiagramImageForVision(imageBytes);
-            mime = detectImageMime(imageBytes);
-            b64 = Base64.getEncoder().encodeToString(imageBytes);
-        }
-
-        JsonObject bodyJsonMode = buildGeminiVisionRequestBody(b64, mime, true);
-        try {
-            return executeGeminiGenerateContent(geminiModelForVision(), bodyJsonMode);
-        } catch (AIEngineException first) {
-            if (!geminiVisionRetryWithoutJsonMode(first)) {
-                throw first;
-            }
-            JsonObject bodyLoose = buildGeminiVisionRequestBody(b64, mime, false);
-            try {
-                return executeGeminiGenerateContent(geminiModelForVision(), bodyLoose);
-            } catch (AIEngineException second) {
-                throw new AIEngineException(
-                        first.getMessage() + " | Retry without JSON mode: " + second.getMessage(),
-                        second.getCause());
-            }
-        }
-    }
-
-    private static boolean geminiVisionRetryWithoutJsonMode(AIEngineException e) {
-        if (e == null || e.getMessage() == null) {
-            return false;
-        }
-        String m = e.getMessage();
-        return m.contains("400") || m.contains("INVALID_ARGUMENT") || m.contains("Unsupported")
-                || m.contains("Json") || m.contains("json") || m.contains("responseMimeType");
-    }
-
-    private static JsonObject buildGeminiVisionRequestBody(String imageBase64, String mime, boolean applicationJsonOutput) {
-        JsonObject sysPart = new JsonObject();
-        sysPart.addProperty("text", SYSTEM_UML_JSON);
-        JsonObject systemInstruction = new JsonObject();
-        JsonArray sysParts = new JsonArray();
-        sysParts.add(sysPart);
-        systemInstruction.add("parts", sysParts);
-
-        JsonArray userParts = new JsonArray();
-        JsonObject textPart = new JsonObject();
-        textPart.addProperty("text",
-                "Analyze this UML class diagram image. Extract classes (with attributes and methods if visible) and relationships. "
-                        + "Reply with ONLY valid JSON per the system instructions — no markdown fences, no commentary.");
-        userParts.add(textPart);
-        JsonObject inline = new JsonObject();
-        inline.addProperty("mime_type", mime);
-        inline.addProperty("data", imageBase64);
-        JsonObject imgPart = new JsonObject();
-        imgPart.add("inline_data", inline);
-        userParts.add(imgPart);
-
-        JsonObject userTurn = new JsonObject();
-        userTurn.addProperty("role", "user");
-        userTurn.add("parts", userParts);
-
-        JsonArray contents = new JsonArray();
-        contents.add(userTurn);
-
-        JsonObject genCfg = new JsonObject();
-        genCfg.addProperty("temperature", 0.2);
-        genCfg.addProperty("maxOutputTokens", 8192);
-        if (applicationJsonOutput) {
-            genCfg.addProperty("responseMimeType", "application/json");
-        }
-
-        JsonObject body = new JsonObject();
-        body.add("systemInstruction", systemInstruction);
-        body.add("contents", contents);
-        body.add("generationConfig", genCfg);
-        return body;
-    }
-
-    private HttpUrl geminiGenerateContentHttpUrl(String modelId) {
-        String mid = normalizeGeminiModelId(modelId);
-        String urlString = "https://generativelanguage.googleapis.com/v1beta/models/" + mid + ":generateContent";
-        HttpUrl base = HttpUrl.parse(urlString);
-        if (base == null) {
-            throw new AIEngineException("Invalid Gemini model id (check ai.gemini.model): " + mid, null);
-        }
-        return base.newBuilder().addQueryParameter("key", geminiApiKey).build();
-    }
-
-    private String executeGeminiGenerateContent(String modelId, JsonObject requestBody) {
-        HttpUrl url = geminiGenerateContentHttpUrl(modelId);
-        Request request = new Request.Builder()
-                .url(url)
-                .header("Content-Type", "application/json")
-                .post(RequestBody.create(requestBody.toString(), JSON_MEDIA))
-                .build();
-        try (Response resp = http.newCall(request).execute()) {
-            String respBody = resp.body() != null ? resp.body().string() : "";
-            if (!resp.isSuccessful()) {
-                String detail = httpErrorDetail(respBody);
-                throw new AIEngineException(
-                        "Gemini vision request failed: HTTP " + resp.code()
-                                + (detail != null ? " — " + detail : " — " + truncate(respBody, 500)),
-                        null);
-            }
-            return extractGeminiText(respBody);
-        } catch (IOException e) {
-            throw new AIEngineException("Gemini vision request failed: " + e.getMessage(), e);
+            throw ex;
         }
     }
 
@@ -704,7 +527,8 @@ public class LLMAPIEngine implements IAIEngine {
     private String postChatCompletions(JsonObject body, String url, String bearerKey) {
         if (useGemini) {
             JsonObject geminiBody = convertOpenAiChatRequestToGemini(body);
-            HttpUrl geminiUrl = geminiGenerateContentHttpUrl(geminiModel);
+            String geminiUrl = "https://generativelanguage.googleapis.com/v1beta/models/"
+                    + geminiModel + ":generateContent?key=" + geminiApiKey;
             Request request = new Request.Builder()
                     .url(geminiUrl)
                     .header("Content-Type", "application/json")
@@ -884,34 +708,14 @@ public class LLMAPIEngine implements IAIEngine {
                     : errEl.toString();
             throw new AIEngineException("Gemini error: " + msg, null);
         }
-        if (root.has("promptFeedback")) {
-            JsonObject pf = root.getAsJsonObject("promptFeedback");
-            if (pf.has("blockReason")) {
-                throw new AIEngineException(
-                        "Gemini blocked the prompt or image: " + pf.get("blockReason").getAsString(),
-                        null);
-            }
-        }
         if (!root.has("candidates") || root.get("candidates").isJsonNull()) {
-            throw new AIEngineException(
-                    "Gemini returned no candidates (image too large, safety filter, or model issue). Raw: "
-                            + truncate(responseJson, 500),
-                    null);
+            throw new AIEngineException("Gemini returned no candidates. Raw: " + truncate(responseJson, 400), null);
         }
         JsonArray candidates = root.getAsJsonArray("candidates");
         if (candidates.size() == 0) {
-            throw new AIEngineException(
-                    "Gemini returned no candidates (image too large, safety filter, or model issue). Raw: "
-                            + truncate(responseJson, 500),
-                    null);
+            throw new AIEngineException("Gemini returned no candidates. Raw: " + truncate(responseJson, 400), null);
         }
         JsonObject cand = candidates.get(0).getAsJsonObject();
-        if (cand.has("finishReason") && cand.get("finishReason").isJsonPrimitive()) {
-            String fr = cand.get("finishReason").getAsString();
-            if ("SAFETY".equals(fr) || "BLOCKLIST".equals(fr) || "PROHIBITED_CONTENT".equals(fr)) {
-                throw new AIEngineException("Gemini stopped for safety: " + fr, null);
-            }
-        }
         if (cand.has("content") && !cand.get("content").isJsonNull()) {
             JsonObject content = cand.getAsJsonObject("content");
             if (content.has("parts")) {
@@ -927,84 +731,7 @@ public class LLMAPIEngine implements IAIEngine {
                 }
             }
         }
-        throw new AIEngineException("Gemini returned empty text. Raw: " + truncate(responseJson, 500), null);
-    }
-
-    /**
-     * Scales and JPEG-compresses diagram images so vision APIs (especially Gemini inline limits) accept them.
-     */
-    private static byte[] prepareDiagramImageForVision(byte[] data) {
-        if (data == null || data.length == 0) {
-            return data;
-        }
-        byte[] cur = compressDiagramImage(data);
-        try {
-            BufferedImage src = ImageIO.read(new ByteArrayInputStream(cur));
-            if (src == null) {
-                return cur;
-            }
-            int maxSide = 1536;
-            float quality = 0.78f;
-            for (int attempt = 0; attempt < 3; attempt++) {
-                byte[] jpeg = rasterToJpegBytes(src, maxSide, quality);
-                if (jpeg == null || jpeg.length == 0) {
-                    return cur;
-                }
-                int b64Len = Base64.getEncoder().encodeToString(jpeg).length();
-                if (b64Len <= 5_500_000 || attempt == 2) {
-                    return jpeg;
-                }
-                maxSide = Math.max(768, maxSide * 3 / 4);
-                quality = Math.max(0.55f, quality - 0.12f);
-                BufferedImage smaller = ImageIO.read(new ByteArrayInputStream(jpeg));
-                if (smaller != null) {
-                    src = smaller;
-                }
-            }
-        } catch (Exception e) {
-            return cur;
-        }
-        return cur;
-    }
-
-    private static byte[] rasterToJpegBytes(BufferedImage src, int maxSide, float quality) {
-        try {
-            int w = src.getWidth();
-            int h = src.getHeight();
-            int max = Math.max(w, h);
-            double scale = max > maxSide ? (double) maxSide / max : 1.0;
-            BufferedImage toWrite = src;
-            if (scale < 1.0) {
-                int nw = Math.max(1, (int) Math.round(w * scale));
-                int nh = Math.max(1, (int) Math.round(h * scale));
-                BufferedImage scaled = new BufferedImage(nw, nh, BufferedImage.TYPE_INT_RGB);
-                Graphics2D g = scaled.createGraphics();
-                g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
-                g.drawImage(src, 0, 0, nw, nh, null);
-                g.dispose();
-                toWrite = scaled;
-            }
-            ByteArrayOutputStream bos = new ByteArrayOutputStream();
-            Iterator<ImageWriter> writers = ImageIO.getImageWritersByFormatName("jpeg");
-            if (!writers.hasNext()) {
-                return null;
-            }
-            ImageWriter writer = writers.next();
-            ImageWriteParam param = writer.getDefaultWriteParam();
-            if (param.canWriteCompressed()) {
-                param.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);
-                param.setCompressionQuality(quality);
-            }
-            ImageOutputStream ios = ImageIO.createImageOutputStream(bos);
-            writer.setOutput(ios);
-            writer.write(null, new IIOImage(toWrite, null, null), param);
-            writer.dispose();
-            ios.close();
-            byte[] out = bos.toByteArray();
-            return out.length > 0 ? out : null;
-        } catch (Exception e) {
-            return null;
-        }
+        throw new AIEngineException("Gemini returned empty text. Raw: " + truncate(responseJson, 400), null);
     }
 
     /** Resize/compress large diagrams so providers accept the payload. */

@@ -25,8 +25,6 @@ ai.api.model=llama3.1-8b
 # ai.provider=gemini
 # ai.gemini.api.key=
 # ai.gemini.model=gemini-2.0-flash
-# Optional: multimodal model for "Analyse Image" (defaults to ai.gemini.model). Examples: gemini-2.0-flash, gemini-1.5-flash
-# ai.gemini.vision.model=gemini-2.0-flash
 
 stt.provider=whisper
 stt.api.key=YOUR_STT_KEY_HERE

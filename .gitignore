@@ -48,5 +48,7 @@ desktop.ini
 # App exports / generated output
 exports/
 
-# Local API keys — use a copy without secrets for commits; see config.properties.example if present
+# Local API keys — copy config.properties.example → src/main/resources/config.properties if you want
+# classpath defaults, or use repo-root config.properties (overlay for LLMAPIEngine only; never commit).
 src/main/resources/config.properties
+/config.properties

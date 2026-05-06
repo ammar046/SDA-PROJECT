@@ -4,6 +4,7 @@ db.username=
 db.password=
 
 # --- OpenAI-compatible (Cerebras, OpenAI, etc.) ---
+# Or set env: UMLYTICS_API_KEY, OPENAI_API_KEY, or CEREBRAS_API_KEY (see LLMAPIEngine).
 ai.api.key=YOUR_API_KEY_HERE
 ai.api.endpoint=https://api.cerebras.ai/v1/chat/completions
 # Use a model enabled for your key (Cerebras console). If you see model_not_found, try llama3.1-8b, gpt-oss-120b, or another listed in inference-docs.cerebras.ai. Image analysis needs a vision endpoint (e.g. OpenAI gpt-4o), not Cerebras text models.

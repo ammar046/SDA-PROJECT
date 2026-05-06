@@ -112,7 +112,7 @@ public class LLMAPIEngine implements IAIEngine {
 
     public LLMAPIEngine() {
         Properties props = loadProps();
-        this.apiKey = trimOrEmpty(props.getProperty("ai.api.key"));
+        this.apiKey = resolveOpenAiCompatibleApiKey(props);
         this.endpoint = props.getProperty("ai.api.endpoint", "https://api.openai.com/v1/chat/completions");
         this.modelName = props.getProperty("ai.api.model", "gpt-4o");
         this.visionEndpoint = trimOrEmpty(props.getProperty("ai.vision.endpoint"));
@@ -136,6 +136,24 @@ public class LLMAPIEngine implements IAIEngine {
         return !key.isEmpty()
                 && !key.equalsIgnoreCase("YOUR_API_KEY_HERE")
                 && !key.startsWith("${");
+    }
+
+    /**
+     * Uses {@code ai.api.key} from config when valid; otherwise {@code UMLYTICS_API_KEY}, {@code OPENAI_API_KEY},
+     * or {@code CEREBRAS_API_KEY} from the environment (OpenAI-compatible providers including Cerebras).
+     */
+    private static String resolveOpenAiCompatibleApiKey(Properties props) {
+        String fromFile = trimOrEmpty(props.getProperty("ai.api.key"));
+        if (openAiCredentialsLookValid(fromFile)) {
+            return fromFile;
+        }
+        for (String env : new String[] { "UMLYTICS_API_KEY", "OPENAI_API_KEY", "CEREBRAS_API_KEY" }) {
+            String v = trimOrEmpty(System.getenv(env));
+            if (openAiCredentialsLookValid(v)) {
+                return v;
+            }
+        }
+        return fromFile;
     }
 
     private static Integer parseIntOrNull(String s) {
